@@ -18,6 +18,12 @@ import sys
 import urllib.request
 from pathlib import Path
 
+# Force UTF-8 output on Windows (avoids UnicodeEncodeError in CP1252 terminals)
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if sys.stderr.encoding and sys.stderr.encoding.lower() != "utf-8":
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.pdfgen import canvas
@@ -49,12 +55,11 @@ def setup_bengali_font(target_dir: Path) -> tuple[str, str]:
 
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
-    # Candidates for Regular font
+    # Candidates for Regular font — using Noto Sans Bengali (reliable jsDelivr CDN)
     reg_urls = [
-        "https://fonts.gstatic.com/s/hindsiliguri/v18/ijwTs5juQtMx-MWNV3bpkwIGnSExXmM.ttf",
-        "https://raw.githubusercontent.com/googlefonts/hindsiliguri/main/fonts/ttf/HindSiliguri-Regular.ttf",
-        "https://github.com/googlefonts/hindsiliguri/raw/main/fonts/ttf/HindSiliguri-Regular.ttf",
-        "https://raw.githubusercontent.com/fahimmurshed/bangla-fonts/master/Kalpurush.ttf",
+        "https://cdn.jsdelivr.net/gh/googlefonts/noto-fonts@main/hinted/ttf/NotoSansBengali/NotoSansBengali-Regular.ttf",
+        "https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoSansBengali/NotoSansBengali-Regular.ttf",
+        "https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-bengali@5.0.3/files/noto-sans-bengali-bengali-400-normal.woff2",
     ]
 
     # Download regular font if needed
@@ -276,7 +281,7 @@ def generate_khatian_pdf(output_path: Path, font_reg: str, font_bold: str):
     banner_x = (PAGE_WIDTH - banner_w) / 2
     banner_y = 730
     c.setFillColor(primary_color)
-    c.roundRect(banner_x, banner_y, banner_w, banner_h, 3, fill=1, stroke=0)
+    c.roundRect(banner_x, banner_y, banner_w, banner_h, 3, fill=1, stroke=1)
 
     c.setFont(font_bold, 12.5)
     c.setFillColor(colors.white)
@@ -426,7 +431,7 @@ def generate_khatian_pdf(output_path: Path, font_reg: str, font_bold: str):
     cert_box_h = 75
     c.setStrokeColor(colors.HexColor("#94a3b8"))
     c.setFillColor(colors.HexColor("#f1f5f9"))
-    c.roundRect(30, cert_box_y, 440, cert_box_h, 3, fill=1, stroke=0.6)
+    c.roundRect(30, cert_box_y, 440, cert_box_h, 3, fill=1, stroke=1)
 
     c.setFont(font_bold, 8.5)
     c.setFillColor(primary_color)
@@ -531,7 +536,7 @@ def generate_porcha_pdf(output_path: Path, font_reg: str, font_bold: str):
     banner_x = (PAGE_WIDTH - banner_w) / 2
     banner_y = 730
     c.setFillColor(primary_color)
-    c.roundRect(banner_x, banner_y, banner_w, banner_h, 3, fill=1, stroke=0)
+    c.roundRect(banner_x, banner_y, banner_w, banner_h, 3, fill=1, stroke=1)
 
     c.setFont(font_bold, 12.5)
     c.setFillColor(colors.white)
@@ -678,7 +683,7 @@ def generate_porcha_pdf(output_path: Path, font_reg: str, font_bold: str):
     sec_box_h = 80
     c.setStrokeColor(colors.HexColor("#cbd5e1"))
     c.setFillColor(colors.HexColor("#fef2f2"))
-    c.roundRect(30, sec_box_y, 440, sec_box_h, 3, fill=1, stroke=0.6)
+    c.roundRect(30, sec_box_y, 440, sec_box_h, 3, fill=1, stroke=1)
 
     c.setFont(font_bold, 8.5)
     c.setFillColor(primary_color)
@@ -816,7 +821,7 @@ def generate_deed_pdf(output_path: Path, font_reg: str, font_bold: str):
     banner_x = (PAGE_WIDTH - banner_w) / 2
     banner_y = 690
     c.setFillColor(primary_color)
-    c.roundRect(banner_x, banner_y, banner_w, banner_h, 3, fill=1, stroke=0)
+    c.roundRect(banner_x, banner_y, banner_w, banner_h, 3, fill=1, stroke=1)
 
     c.setFont(font_bold, 12)
     c.setFillColor(colors.white)
@@ -890,7 +895,7 @@ def generate_deed_pdf(output_path: Path, font_reg: str, font_bold: str):
     bound_y = 422
     c.setStrokeColor(colors.HexColor("#cbd5e1"))
     c.setFillColor(colors.HexColor("#f8fafc"))
-    c.roundRect(30, bound_y, 535, 32, 3, fill=1, stroke=0.5)
+    c.roundRect(30, bound_y, 535, 32, 3, fill=1, stroke=1)
 
     c.setFont(font_bold, 8)
     c.setFillColor(primary_color)
@@ -946,7 +951,7 @@ def generate_deed_pdf(output_path: Path, font_reg: str, font_bold: str):
     bx1 = 30
     c.setStrokeColor(colors.HexColor("#94a3b8"))
     c.setFillColor(colors.HexColor("#f8fafc"))
-    c.roundRect(bx1, boxes_y, box_w, box_h, 3, fill=1, stroke=0.6)
+    c.roundRect(bx1, boxes_y, box_w, box_h, 3, fill=1, stroke=1)
     c.setFont(font_bold, 8)
     c.setFillColor(primary_color)
     c.drawCentredString(bx1 + box_w / 2, boxes_y + box_h - 12, "১ম পক্ষ (বিক্রেতা)")
@@ -958,7 +963,7 @@ def generate_deed_pdf(output_path: Path, font_reg: str, font_bold: str):
 
     # 2. Buyer
     bx2 = bx1 + box_w + gap
-    c.roundRect(bx2, boxes_y, box_w, box_h, 3, fill=1, stroke=0.6)
+    c.roundRect(bx2, boxes_y, box_w, box_h, 3, fill=1, stroke=1)
     c.setFont(font_bold, 8)
     c.setFillColor(primary_color)
     c.drawCentredString(bx2 + box_w / 2, boxes_y + box_h - 12, "২য় পক্ষ (ক্রেতা)")
@@ -970,7 +975,7 @@ def generate_deed_pdf(output_path: Path, font_reg: str, font_bold: str):
 
     # 3. Identifier
     bx3 = bx2 + box_w + gap
-    c.roundRect(bx3, boxes_y, box_w, box_h, 3, fill=1, stroke=0.6)
+    c.roundRect(bx3, boxes_y, box_w, box_h, 3, fill=1, stroke=1)
     c.setFont(font_bold, 8)
     c.setFillColor(primary_color)
     c.drawCentredString(bx3 + box_w / 2, boxes_y + box_h - 12, "সনাক্তকারীর স্বাক্ষর")
@@ -982,7 +987,7 @@ def generate_deed_pdf(output_path: Path, font_reg: str, font_bold: str):
 
     # 4. Sub-Registrar
     bx4 = bx3 + box_w + gap
-    c.roundRect(bx4, boxes_y, box_w, box_h, 3, fill=1, stroke=0.6)
+    c.roundRect(bx4, boxes_y, box_w, box_h, 3, fill=1, stroke=1)
     c.setFont(font_bold, 8)
     c.setFillColor(primary_color)
     c.drawCentredString(bx4 + box_w / 2, boxes_y + box_h - 12, "সাব-রেজিস্ট্রার (সীল)")
@@ -997,7 +1002,7 @@ def generate_deed_pdf(output_path: Path, font_reg: str, font_bold: str):
     wit_y = 95
     c.setStrokeColor(colors.HexColor("#cbd5e1"))
     c.setFillColor(colors.HexColor("#ffffff"))
-    c.roundRect(30, wit_y, 535, 68, 3, fill=1, stroke=0.5)
+    c.roundRect(30, wit_y, 535, 68, 3, fill=1, stroke=1)
 
     c.setFont(font_bold, 8)
     c.setFillColor(primary_color)

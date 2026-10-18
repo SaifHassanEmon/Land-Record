@@ -1,7 +1,9 @@
 import axios from 'axios';
 import { DocumentItem, DemoDoc, DocType, DocumentStats } from '../types';
 
-const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1';
+// Ensure base URL has no trailing slashes
+const RAW_API_BASE = import.meta.env.VITE_API_BASE || '/api/v1';
+const API_BASE = RAW_API_BASE.replace(/\/+$/, '');
 
 export const apiClient = axios.create({
   baseURL: API_BASE,
@@ -11,13 +13,29 @@ export const apiClient = axios.create({
   timeout: 30000,
 });
 
+// Interceptor to prevent Axios from stripping subpath (e.g., /api/v1) when request URL starts with '/'
+apiClient.interceptors.request.use((config) => {
+  if (config.baseURL && config.url && config.url.startsWith('/')) {
+    try {
+      const urlObj = new URL(config.baseURL, 'http://localhost');
+      if (urlObj.pathname && urlObj.pathname !== '/') {
+        // Strip leading slash so it appends to baseURL subpath
+        config.url = config.url.replace(/^\/+/, '');
+      }
+    } catch {
+      // ignore parsing error
+    }
+  }
+  return config;
+});
+
 // Seed sample data for preview / offline demonstration
 const MOCK_DEMO_DOCS: DemoDoc[] = [
   {
     id: 'demo-1',
     name: 'নমুনা সি.এস. খতিয়ান (বাড্ডা, ঢাকা)',
     doc_type: 'khatian',
-    file_name: 'demo_cs_khatian_128.jpg',
+    file_name: 'khatian_cs_128_badda.jpg',
     description: 'ঢাকা জেলা, গুলশান থানা, বাড্ডা মৌজার সি.এস. খতিয়ান রেকর্ড',
     download_url: '/api/v1/demo-docs/demo-1/download',
     size: '1.2 MB',
@@ -26,7 +44,7 @@ const MOCK_DEMO_DOCS: DemoDoc[] = [
     id: 'demo-2',
     name: 'নমুনা আর.এস. পর্চা (রামপুরা, ঢাকা)',
     doc_type: 'porcha',
-    file_name: 'demo_rs_porcha_57.jpg',
+    file_name: 'porcha_rs_57_rampura.jpg',
     description: 'আর.এস. চূড়ান্ত জরিপ পর্চা ও দাগ নম্বর বিবরণ',
     download_url: '/api/v1/demo-docs/demo-2/download',
     size: '950 KB',
@@ -35,7 +53,7 @@ const MOCK_DEMO_DOCS: DemoDoc[] = [
     id: 'demo-3',
     name: 'নমুনা সাফ কবলা দলিল (মিরপুর)',
     doc_type: 'deed',
-    file_name: 'demo_saf_kabala_deed_9822.pdf',
+    file_name: 'deed_9822_mirpur_2023.pdf',
     description: 'সাব-রেজিস্ট্রার কার্যালয় মিরপুর, সাফ কবলা রেজিস্ট্রি দলিল',
     download_url: '/api/v1/demo-docs/demo-3/download',
     size: '2.4 MB',
@@ -108,6 +126,25 @@ const MOCK_INITIAL_DOCUMENTS: DocumentItem[] = [
 // In-memory fallback cache for smooth offline / preview testing
 let localDocuments: DocumentItem[] = [...MOCK_INITIAL_DOCUMENTS];
 
+function mapBackendDocument(item: any): DocumentItem {
+  return {
+    id: String(item.id),
+    file_name: item.original_filename || item.filename || item.file_name || 'Document',
+    original_filename: item.original_filename || item.filename,
+    doc_type: item.doc_type || 'khatian',
+    file_url: item.file_url || `${API_BASE}/documents/${item.id}/file`,
+    file_path: item.file_path,
+    status: item.status || 'done',
+    confidence: item.ocr_confidence !== undefined ? item.ocr_confidence : (item.confidence || 90),
+    ocr_text: item.ocr_text || '',
+    extracted_fields: item.extracted_fields || {},
+    created_at: item.created_at || new Date().toISOString(),
+    updated_at: item.updated_at,
+    file_size: item.file_size,
+    mime_type: item.mime_type,
+  };
+}
+
 /**
  * Upload a document (Khatian, Porcha, or Deed)
  */
@@ -117,26 +154,23 @@ export async function uploadDocument(file: File, docType: DocType): Promise<Docu
   formData.append('doc_type', docType);
 
   try {
-    // Primary API endpoint
-    const response = await apiClient.post<DocumentItem>('/documents/upload', formData, {
+    const response = await apiClient.post('/documents/upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
     });
-    return response.data;
+    return mapBackendDocument(response.data);
   } catch (err: any) {
-    // Try fallback path if backend uses POST /documents
     try {
-      const response = await apiClient.post<DocumentItem>('/documents', formData, {
+      const response = await apiClient.post('/documents', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
       });
-      return response.data;
+      return mapBackendDocument(response.data);
     } catch (fallbackErr) {
       console.warn('API upload failed, creating mock document representation:', fallbackErr);
 
-      // Local fallback representation so user flow completes smoothly even if backend is starting up
       const newDoc: DocumentItem = {
         id: `doc-${Date.now()}`,
         file_name: file.name,
@@ -176,9 +210,13 @@ export async function listDocuments(params?: {
   limit?: number;
 }): Promise<DocumentItem[]> {
   try {
-    const response = await apiClient.get<DocumentItem[]>('/documents', { params });
-    if (Array.isArray(response.data)) {
-      return response.data;
+    const response = await apiClient.get('/documents', { params });
+    const data = response.data;
+    if (Array.isArray(data)) {
+      return data.map(mapBackendDocument);
+    }
+    if (data && Array.isArray(data.items)) {
+      return data.items.map(mapBackendDocument);
     }
     return localDocuments;
   } catch (err) {
@@ -196,8 +234,8 @@ export async function listDocuments(params?: {
  */
 export async function getDocument(id: string): Promise<DocumentItem> {
   try {
-    const response = await apiClient.get<DocumentItem>(`/documents/${id}`);
-    return response.data;
+    const response = await apiClient.get(`/documents/${id}`);
+    return mapBackendDocument(response.data);
   } catch (err) {
     console.warn(`Falling back for document ${id}:`, err);
     const found = localDocuments.find((d) => d.id === id);
@@ -211,10 +249,17 @@ export async function getDocument(id: string): Promise<DocumentItem> {
  */
 export async function searchDocuments(query: string, docType?: string): Promise<DocumentItem[]> {
   try {
-    const response = await apiClient.get<DocumentItem[]>('/search', {
+    const response = await apiClient.get('/search', {
       params: { q: query, doc_type: docType },
     });
-    return response.data;
+    const data = response.data;
+    if (Array.isArray(data)) {
+      return data.map(mapBackendDocument);
+    }
+    if (data && Array.isArray(data.items)) {
+      return data.items.map(mapBackendDocument);
+    }
+    return localDocuments;
   } catch (err) {
     console.warn('Falling back to local document search:', err);
     const qLower = query.toLowerCase().trim();
@@ -242,8 +287,30 @@ export async function searchDocuments(query: string, docType?: string): Promise<
  */
 export async function getDemoDocs(): Promise<DemoDoc[]> {
   try {
-    const response = await apiClient.get<DemoDoc[]>('/demo-docs');
-    return response.data;
+    const response = await apiClient.get('/demo-docs');
+    const data = response.data;
+
+    let items: any[] = [];
+    if (Array.isArray(data)) {
+      items = data;
+    } else if (data && Array.isArray(data.items)) {
+      items = data.items;
+    }
+
+    if (items.length > 0) {
+      return items.map((item, idx) => ({
+        id: item.filename || `demo-${idx}`,
+        name: item.name || item.filename || `নমুনা দলিল ${idx + 1}`,
+        doc_type: item.doc_type || 'khatian',
+        file_name: item.filename || item.file_name || `demo_${idx + 1}.pdf`,
+        description: item.description || 'পরীক্ষার জন্য নমুনা ভূমি রেকর্ড দলিল',
+        download_url: `${API_BASE}/demo-docs/${item.filename}/download`,
+        size: item.file_size ? `${(item.file_size / 1024).toFixed(1)} KB` : undefined,
+      }));
+    }
+
+    // If backend returns empty items list, fallback to rich built-in demo documents
+    return MOCK_DEMO_DOCS;
   } catch (err) {
     console.warn('Falling back to mock demo docs:', err);
     return MOCK_DEMO_DOCS;
@@ -259,7 +326,6 @@ export async function uploadAllDemoDocs(): Promise<{ message?: string; documents
     return response.data;
   } catch (err) {
     console.warn('Falling back for uploadAllDemoDocs:', err);
-    // Add mock docs to localDocuments if not present
     MOCK_INITIAL_DOCUMENTS.forEach((doc) => {
       if (!localDocuments.some((d) => d.id === doc.id)) {
         localDocuments.unshift(doc);
@@ -292,17 +358,21 @@ export async function deleteDocument(id: string): Promise<void | { success: bool
  */
 export async function getStats(): Promise<DocumentStats> {
   try {
-    const response = await apiClient.get<DocumentStats>('/stats');
-    return response.data;
+    const response = await apiClient.get('/stats');
+    if (response.data && typeof response.data.total === 'number') {
+      return response.data;
+    }
   } catch {
-    const docs = await listDocuments();
-    return {
-      total: docs.length,
-      khatian: docs.filter((d) => d.doc_type === 'khatian').length,
-      porcha: docs.filter((d) => d.doc_type === 'porcha').length,
-      deed: docs.filter((d) => d.doc_type === 'deed').length,
-    };
+    // ignore
   }
+
+  const docs = await listDocuments();
+  return {
+    total: docs.length,
+    khatian: docs.filter((d) => d.doc_type === 'khatian').length,
+    porcha: docs.filter((d) => d.doc_type === 'porcha').length,
+    deed: docs.filter((d) => d.doc_type === 'deed').length,
+  };
 }
 
 export function normalizeConfidence(val: number | undefined | null): number {

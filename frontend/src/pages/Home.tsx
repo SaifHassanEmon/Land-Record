@@ -37,11 +37,12 @@ export const Home: React.FC = () => {
       try {
         setLoading(true);
         const [statsData, docsData] = await Promise.all([getStats(), listDocuments()]);
-        setStats(statsData);
+        setStats(statsData || { total: 0, khatian: 0, porcha: 0, deed: 0 });
         // Show last 5 documents
-        setRecentDocs(docsData.slice(0, 5));
+        setRecentDocs(Array.isArray(docsData) ? docsData.slice(0, 5) : []);
       } catch (err) {
         console.error('Failed to load dashboard data:', err);
+        setRecentDocs([]);
       } finally {
         setLoading(false);
       }

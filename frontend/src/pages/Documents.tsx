@@ -31,9 +31,10 @@ export const Documents: React.FC = () => {
           doc_type: filter === 'all' ? undefined : filter,
         });
       }
-      setDocuments(docs);
+      setDocuments(Array.isArray(docs) ? docs : []);
     } catch (err: any) {
       console.error('Error fetching documents:', err);
+      setDocuments([]);
       setErrorMessage(err.message || t('common.error'));
     } finally {
       setLoading(false);

@@ -46,9 +46,10 @@ export const Upload: React.FC = () => {
       try {
         setLoadingDemoDocs(true);
         const docs = await getDemoDocs();
-        setDemoDocs(docs);
+        setDemoDocs(Array.isArray(docs) ? docs : []);
       } catch (err) {
         console.error('Failed to load demo docs:', err);
+        setDemoDocs([]);
       } finally {
         setLoadingDemoDocs(false);
       }
@@ -361,7 +362,7 @@ export const Upload: React.FC = () => {
         {/* Demo Documents Cards */}
         {loadingDemoDocs ? (
           <LoadingSpinner />
-        ) : (
+        ) : Array.isArray(demoDocs) && demoDocs.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {demoDocs.map((demo) => (
               <div
