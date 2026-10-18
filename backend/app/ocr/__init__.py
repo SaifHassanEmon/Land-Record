@@ -27,6 +27,24 @@ def run_full_ocr_pipeline(file_path: Union[str, Path], doc_type: str) -> Dict[st
     path = Path(file_path)
     logger.info(f"Starting OCR pipeline for {path.name} (type: {doc_type})...")
 
+    # Step 0: Check for digital text layer in PDF (fast & 100% accurate for digital records)
+    if path.suffix.lower() == ".pdf":
+        try:
+            from app.ocr.preprocessor import extract_text_from_pdf
+            direct_text = extract_text_from_pdf(path)
+            if direct_text and len(direct_text.strip()) > 50:
+                logger.info(f"Using high-fidelity digital text layer for {path.name} ({len(direct_text)} chars)")
+                extracted = extract_fields(doc_type, direct_text)
+                return {
+                    "text": direct_text,
+                    "confidence": 0.98,
+                    "words": [],
+                    "extracted_fields": extracted,
+                    "engine": "digital_pdf_layer",
+                }
+        except Exception as e:
+            logger.debug(f"Direct PDF text check skipped: {e}")
+
     # Step 1: Preprocess
     preprocessed_images = preprocess_document(path)
     if not preprocessed_images:

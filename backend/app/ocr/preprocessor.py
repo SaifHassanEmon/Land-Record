@@ -33,19 +33,58 @@ def read_image_safely(file_path: Union[str, Path]) -> np.ndarray:
         return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
 
 
+def extract_text_from_pdf(pdf_path: Union[str, Path]) -> Optional[str]:
+    """
+    Extracts embedded digital text from PDF if available.
+    Returns None if no readable digital text layer is present.
+    """
+    try:
+        import pypdfium2 as pdfium
+        pdf = pdfium.PdfDocument(str(pdf_path))
+        text_parts = []
+        for page in pdf:
+            txt = page.get_textpage().get_text_range()
+            if txt and txt.strip():
+                text_parts.append(txt.strip())
+        full_text = "\n\n".join(text_parts)
+        if len(full_text.strip()) > 30:
+            return full_text.strip()
+    except Exception as e:
+        logger.debug(f"Direct PDF text extraction skipped: {e}")
+    return None
+
+
 def convert_pdf_to_images(pdf_path: Union[str, Path]) -> List[np.ndarray]:
     """
     Converts all pages of a PDF to a list of BGR numpy images.
-    Uses pdf2image with poppler support.
+    Uses pypdfium2 first (zero external dependencies), falls back to pdf2image.
     """
+    pdf_path_str = str(pdf_path)
+
+    # 1. Try pypdfium2 (built-in, no poppler installation needed)
+    try:
+        import pypdfium2 as pdfium
+        pdf = pdfium.PdfDocument(pdf_path_str)
+        images = []
+        for page in pdf:
+            pil_img = page.render(scale=2).to_pil()
+            rgb_arr = np.array(pil_img.convert("RGB"))
+            bgr_arr = cv2.cvtColor(rgb_arr, cv2.COLOR_RGB2BGR)
+            images.append(bgr_arr)
+        if images:
+            return images
+    except Exception as e:
+        logger.debug(f"pypdfium2 conversion fallback: {e}")
+
+    # 2. Try pdf2image with poppler support
     try:
         from pdf2image import convert_from_path
 
-        kwargs = {"dpi": 300}
+        kwargs = {"dpi": 200}
         if settings.POPPLER_PATH:
             kwargs["poppler_path"] = settings.POPPLER_PATH
 
-        pil_pages = convert_from_path(str(pdf_path), **kwargs)
+        pil_pages = convert_from_path(pdf_path_str, **kwargs)
         images = []
         for p in pil_pages:
             rgb_arr = np.array(p.convert("RGB"))
@@ -55,7 +94,7 @@ def convert_pdf_to_images(pdf_path: Union[str, Path]) -> List[np.ndarray]:
     except Exception as e:
         logger.error(f"pdf2image conversion failed for {pdf_path}: {e}")
         raise RuntimeError(
-            f"Failed to convert PDF to images. Ensure Poppler is installed and available in PATH. Error: {e}"
+            f"Failed to convert PDF to images. Error: {e}"
         )
 
 
