@@ -284,6 +284,34 @@ export async function getDocument(id: string): Promise<DocumentItem> {
 }
 
 /**
+ * Update document fields and OCR text (Verify & Save)
+ */
+export async function updateDocument(
+  id: string,
+  updates: { extracted_fields?: any; ocr_text?: string; doc_type?: string }
+): Promise<DocumentItem> {
+  try {
+    const response = await apiClient.put(`/documents/${id}`, updates);
+    const updated = mapBackendDocument(response.data);
+    localDocuments = localDocuments.map((doc) => (doc.id === id ? updated : doc));
+    return updated;
+  } catch (err) {
+    console.warn(`Falling back for updateDocument ${id}:`, err);
+    const idx = localDocuments.findIndex((d) => d.id === id);
+    if (idx !== -1) {
+      localDocuments[idx] = {
+        ...localDocuments[idx],
+        extracted_fields: updates.extracted_fields || localDocuments[idx].extracted_fields,
+        ocr_text: updates.ocr_text !== undefined ? updates.ocr_text : localDocuments[idx].ocr_text,
+        doc_type: (updates.doc_type as any) || localDocuments[idx].doc_type,
+      };
+      return localDocuments[idx];
+    }
+    throw new Error('Document not found for update');
+  }
+}
+
+/**
  * Search documents by query and optional document type
  */
 export async function searchDocuments(query: string, docType?: string): Promise<DocumentItem[]> {

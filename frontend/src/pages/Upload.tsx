@@ -10,10 +10,14 @@ import {
   X,
   FileText,
   ScrollText,
-  Image as ImageIcon,
+  Save,
+  RotateCcw,
+  Check,
+  ExternalLink,
+  Edit3,
 } from 'lucide-react';
-import { DocType } from '../types';
-import { uploadDocument, fetchDemoFile } from '../api/client';
+import { DocType, DocumentItem } from '../types';
+import { uploadDocument, updateDocument, fetchDemoFile } from '../api/client';
 import { DocumentBadge } from '../components/DocumentBadge';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 
@@ -28,8 +32,15 @@ export const Upload: React.FC = () => {
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [isLoadingDemo, setIsLoadingDemo] = useState<boolean>(false);
-  const [uploadSuccess, setUploadSuccess] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Verification & Edit states after processing completes
+  const [isProcessDone, setIsProcessDone] = useState<boolean>(false);
+  const [processedDoc, setProcessedDoc] = useState<DocumentItem | null>(null);
+  const [editableFields, setEditableFields] = useState<Record<string, string>>({});
+  const [editableOcrText, setEditableOcrText] = useState<string>('');
+  const [isSavingVerified, setIsSavingVerified] = useState<boolean>(false);
+  const [savedSuccessMsg, setSavedSuccessMsg] = useState<string | null>(null);
 
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -63,6 +74,8 @@ export const Upload: React.FC = () => {
   const setNewFile = (file: File) => {
     setSelectedFile(file);
     setErrorMessage(null);
+    setIsProcessDone(false);
+    setProcessedDoc(null);
     if (file.type.startsWith('image/')) {
       const url = URL.createObjectURL(file);
       setFilePreviewUrl(url);
@@ -77,16 +90,19 @@ export const Upload: React.FC = () => {
     }
     setSelectedFile(null);
     setFilePreviewUrl(null);
+    setIsProcessDone(false);
+    setProcessedDoc(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   /**
-   * Loads the authentic user-provided demo image matching the selected or requested docType
+   * Loads the authentic user-provided demo image matching the selected docType
    */
   const handleUseDemo = async (targetType: 'khatian' | 'porcha') => {
     try {
       setIsLoadingDemo(true);
       setErrorMessage(null);
+      setIsProcessDone(false);
       setDocType(targetType);
       const file = await fetchDemoFile(targetType);
       setNewFile(file);
@@ -98,6 +114,9 @@ export const Upload: React.FC = () => {
     }
   };
 
+  /**
+   * Upload & run OCR
+   */
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedFile) {
@@ -108,19 +127,63 @@ export const Upload: React.FC = () => {
     try {
       setIsUploading(true);
       setErrorMessage(null);
-      await uploadDocument(selectedFile, docType);
-      setUploadSuccess(true);
+      const result = await uploadDocument(selectedFile, docType);
 
-      // Redirect to documents list after a brief delay
-      setTimeout(() => {
-        navigate('/documents');
-      }, 1000);
+      // Populate extracted fields into editable state
+      const initialFields: Record<string, string> = {};
+      if (result.extracted_fields) {
+        Object.entries(result.extracted_fields).forEach(([k, v]) => {
+          if (v !== undefined && v !== null) {
+            initialFields[k] = Array.isArray(v) ? v.join(', ') : String(v);
+          }
+        });
+      }
+
+      setProcessedDoc(result);
+      setEditableFields(initialFields);
+      setEditableOcrText(result.ocr_text || '');
+      setIsProcessDone(true);
     } catch (err: any) {
       console.error('Upload failed:', err);
       setErrorMessage(err.message || t('common.error'));
     } finally {
       setIsUploading(false);
     }
+  };
+
+  /**
+   * Save verified/edited fields
+   */
+  const handleVerifyAndSave = async () => {
+    if (!processedDoc) return;
+
+    try {
+      setIsSavingVerified(true);
+      setErrorMessage(null);
+      await updateDocument(processedDoc.id, {
+        extracted_fields: editableFields,
+        ocr_text: editableOcrText,
+        doc_type: docType,
+      });
+
+      setSavedSuccessMsg(t('upload.saved_success'));
+
+      setTimeout(() => {
+        navigate(`/documents/${processedDoc.id}`);
+      }, 900);
+    } catch (err: any) {
+      console.error('Failed to save verified document:', err);
+      setErrorMessage(err.message || 'সংরক্ষণ করতে ব্যর্থ হয়েছে।');
+    } finally {
+      setIsSavingVerified(false);
+    }
+  };
+
+  const handleFieldChange = (key: string, value: string) => {
+    setEditableFields((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
   };
 
   const formatFileSize = (bytes?: number) => {
@@ -131,7 +194,7 @@ export const Upload: React.FC = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
       {/* Header */}
       <div className="text-center max-w-2xl mx-auto space-y-2">
         <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
@@ -142,269 +205,560 @@ export const Upload: React.FC = () => {
         </p>
       </div>
 
-      {/* Main Upload Container */}
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-10 space-y-8">
-        {/* Error Alert */}
-        {errorMessage && (
-          <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-sm flex items-center gap-3">
-            <AlertCircle className="w-5 h-5 shrink-0 text-rose-600" />
-            <p className="font-medium">{errorMessage}</p>
-          </div>
-        )}
-
-        {/* Success Alert */}
-        {uploadSuccess && (
-          <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm flex items-center gap-3 animate-in fade-in">
-            <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-600" />
-            <div>
-              <p className="font-bold">{t('upload.success')}</p>
-              <p className="text-xs text-emerald-700">নথিপত্র তালিকায় স্থানান্তরিত করা হচ্ছে...</p>
-            </div>
-          </div>
-        )}
-
-        {/* Quick Demo Document Option Banner */}
-        <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-slate-50 border border-emerald-200/80 rounded-2xl p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-emerald-600" />
-              <span className="font-bold text-slate-900 text-sm sm:text-base">
-                {t('upload.or_use_demo')}
-              </span>
-            </div>
-            {isLoadingDemo && (
-              <span className="text-xs font-semibold text-emerald-700 flex items-center gap-1.5">
-                <LoadingSpinner size="sm" message="" />
-                <span>লোড হচ্ছে...</span>
-              </span>
-            )}
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-            {/* Demo Khatian Button */}
-            <button
-              type="button"
-              onClick={() => handleUseDemo('khatian')}
-              disabled={isLoadingDemo || isUploading}
-              className={`p-3.5 rounded-xl border text-left transition-all flex items-center gap-3.5 ${
-                docType === 'khatian' && selectedFile?.name.includes('khatian')
-                  ? 'border-emerald-600 bg-white ring-2 ring-emerald-500 shadow-sm'
-                  : 'border-emerald-200 hover:border-emerald-400 bg-white/90 hover:bg-white'
-              }`}
-            >
-              <div className="w-12 h-12 rounded-lg bg-emerald-100 flex items-center justify-center shrink-0 overflow-hidden border border-emerald-200">
-                <img
-                  src="/demo/khatian_demo.png"
-                  alt="নমুনা খতিয়ান"
-                  className="w-full h-full object-cover"
-                />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <ScrollText className="w-4 h-4 text-emerald-700 shrink-0" />
-                  <span className="font-bold text-slate-900 text-sm truncate">
-                    {t('upload.use_demo_khatian')}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500 truncate mt-0.5">
-                  {t('upload.demo_khatian_sub')}
-                </p>
-              </div>
-            </button>
-
-            {/* Demo Porcha Button */}
-            <button
-              type="button"
-              onClick={() => handleUseDemo('porcha')}
-              disabled={isLoadingDemo || isUploading}
-              className={`p-3.5 rounded-xl border text-left transition-all flex items-center gap-3.5 ${
-                docType === 'porcha' && selectedFile?.name.includes('porcha')
-                  ? 'border-emerald-600 bg-white ring-2 ring-emerald-500 shadow-sm'
-                  : 'border-emerald-200 hover:border-emerald-400 bg-white/90 hover:bg-white'
-              }`}
-            >
-              <div className="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center shrink-0 overflow-hidden border border-blue-200">
-                <img
-                  src="/demo/porcha_demo.jpg"
-                  alt="নমুনা পর্চা"
-                  className="w-full h-full object-cover"
-                />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <FileText className="w-4 h-4 text-blue-700 shrink-0" />
-                  <span className="font-bold text-slate-900 text-sm truncate">
-                    {t('upload.use_demo_porcha')}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500 truncate mt-0.5">
-                  {t('upload.demo_porcha_sub')}
-                </p>
-              </div>
-            </button>
-          </div>
+      {/* Error Alert */}
+      {errorMessage && (
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-sm flex items-center gap-3">
+          <AlertCircle className="w-5 h-5 shrink-0 text-rose-600" />
+          <p className="font-medium">{errorMessage}</p>
         </div>
+      )}
 
-        <form onSubmit={handleUpload} className="space-y-6">
-          {/* Document Type Selector */}
-          <div>
-            <label className="block text-sm font-bold text-slate-800 mb-2.5">
-              {t('upload.doc_type')}
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {[
-                { type: 'khatian', label: t('upload.khatian'), desc: 'সি.এস, এস.এ, আর.এস ও বি.এস' },
-                { type: 'porcha', label: t('upload.porcha'), desc: 'জরিপ পরবর্তী রেকর্ড' },
-                { type: 'deed', label: t('upload.deed'), desc: 'সাব-রেজিস্ট্রি ক্রয়-বিক্রয় দলিল' },
-              ].map((item) => (
-                <button
-                  key={item.type}
-                  type="button"
-                  onClick={() => setDocType(item.type as DocType)}
-                  className={`p-4 rounded-2xl border text-left transition-all ${
-                    docType === item.type
-                      ? 'border-emerald-600 bg-emerald-50/70 ring-2 ring-emerald-600/30'
-                      : 'border-slate-200 hover:border-slate-300 bg-white'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-bold text-slate-900 text-sm">{item.label}</span>
-                    <DocumentBadge type={item.type} size="sm" />
-                  </div>
-                  <span className="text-xs text-slate-500 block truncate">{item.desc}</span>
-                </button>
-              ))}
+      {/* ===================================================================== */}
+      {/* POST-PROCESSING VIEW: "Process is Done" + "Verify and Save" Option    */}
+      {/* ===================================================================== */}
+      {isProcessDone && processedDoc ? (
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+          {/* Large Success Announcement */}
+          <div className="bg-emerald-50 border-2 border-emerald-500 rounded-3xl p-6 sm:p-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-md">
+                <CheckCircle2 className="w-8 h-8" />
+              </div>
+              <div className="space-y-1">
+                <h2 className="text-xl sm:text-2xl font-black text-emerald-950">
+                  {t('upload.process_done_title')}
+                </h2>
+                <p className="text-sm text-emerald-800">
+                  {t('upload.process_done_subtitle')}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-end sm:self-center">
+              <DocumentBadge type={processedDoc.doc_type} size="md" />
+              {processedDoc.confidence && (
+                <DocumentBadge confidence={processedDoc.confidence} size="md" />
+              )}
             </div>
           </div>
 
-          {/* Drag & Drop Zone */}
-          <div
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-            className={`border-2 border-dashed rounded-3xl p-6 sm:p-10 text-center cursor-pointer transition-all duration-200 ${
-              isDragging
-                ? 'border-emerald-600 bg-emerald-50/60 scale-[1.01]'
-                : selectedFile
-                ? 'border-emerald-400 bg-emerald-50/20'
-                : 'border-slate-300 hover:border-emerald-500 hover:bg-slate-50/50'
-            }`}
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".jpg,.jpeg,.png,.pdf"
-              onChange={handleFileChange}
-              className="hidden"
-            />
+          {savedSuccessMsg && (
+            <div className="p-4 rounded-2xl bg-emerald-600 text-white font-bold flex items-center gap-2 shadow-sm">
+              <Check className="w-5 h-5" />
+              <span>{savedSuccessMsg}</span>
+            </div>
+          )}
 
-            <div className="flex flex-col items-center justify-center space-y-3">
-              {filePreviewUrl ? (
-                <div className="relative group">
-                  <div className="w-24 h-28 sm:w-28 sm:h-32 rounded-xl border border-slate-200 shadow-sm overflow-hidden bg-white mx-auto">
-                    <img
-                      src={filePreviewUrl}
-                      alt="Preview"
-                      className="w-full h-full object-cover"
+          {/* Verify & Edit Workspace */}
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-10 space-y-8">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-5">
+              <div className="flex items-center gap-2.5">
+                <Edit3 className="w-5 h-5 text-emerald-700" />
+                <h3 className="text-lg font-extrabold text-slate-900">
+                  {t('upload.verify_title')}
+                </h3>
+              </div>
+              <span className="text-xs text-slate-500 font-mono">
+                {processedDoc.original_filename || processedDoc.file_name}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+              {/* Left Column: Scanned Document Preview */}
+              <div className="lg:col-span-5 space-y-4">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 overflow-hidden shadow-xs">
+                  <div className="p-3 bg-slate-100/80 border-b border-slate-200 flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-700">মূল স্ক্যান করা দলিল</span>
+                    {processedDoc.file_url && (
+                      <a
+                        href={processedDoc.file_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs font-medium text-emerald-700 hover:text-emerald-800 inline-flex items-center gap-1"
+                      >
+                        <span>বড় করে দেখুন</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    )}
+                  </div>
+                  <div className="p-3 max-h-[420px] overflow-auto flex items-center justify-center bg-slate-200/40">
+                    {filePreviewUrl ? (
+                      <img
+                        src={filePreviewUrl}
+                        alt="Scanned Preview"
+                        className="w-full h-auto object-contain rounded-lg shadow-sm"
+                      />
+                    ) : (
+                      <div className="py-16 text-center text-slate-400">
+                        <FileText className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                        <span className="text-xs">নথিপত্র প্রিভিউ প্রস্তুত</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Document Type Confirmation */}
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-600">দলিলের প্রকৃতি:</span>
+                  <DocumentBadge type={processedDoc.doc_type} size="sm" />
+                </div>
+              </div>
+
+              {/* Right Column: Editable Information Form */}
+              <div className="lg:col-span-7 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Khatian or Porcha Number */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-700 block">
+                      {docType === 'khatian'
+                        ? t('upload.field_khatian_no')
+                        : t('upload.field_porcha_no')}
+                    </label>
+                    <input
+                      type="text"
+                      value={
+                        editableFields['khatian_number'] ||
+                        editableFields['khatian_no'] ||
+                        editableFields['porcha_number'] ||
+                        ''
+                      }
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        handleFieldChange('khatian_number', val);
+                        handleFieldChange('khatian_no', val);
+                        handleFieldChange('porcha_number', val);
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 font-medium text-sm focus:bg-white focus:ring-2 focus:ring-emerald-600 focus:outline-none transition-all"
                     />
                   </div>
-                  <div className="absolute -top-2 -right-2 bg-emerald-600 text-white rounded-full p-1 shadow">
-                    <FileCheck className="w-4 h-4" />
+
+                  {/* District */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-700 block">
+                      {t('upload.field_district')}
+                    </label>
+                    <input
+                      type="text"
+                      value={editableFields['district'] || ''}
+                      onChange={(e) => handleFieldChange('district', e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 font-medium text-sm focus:bg-white focus:ring-2 focus:ring-emerald-600 focus:outline-none transition-all"
+                    />
+                  </div>
+
+                  {/* Upazila */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-700 block">
+                      {t('upload.field_upazila')}
+                    </label>
+                    <input
+                      type="text"
+                      value={editableFields['upazila'] || ''}
+                      onChange={(e) => handleFieldChange('upazila', e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 font-medium text-sm focus:bg-white focus:ring-2 focus:ring-emerald-600 focus:outline-none transition-all"
+                    />
+                  </div>
+
+                  {/* Mouza */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-700 block">
+                      {t('upload.field_mouza')}
+                    </label>
+                    <input
+                      type="text"
+                      value={editableFields['mouza'] || ''}
+                      onChange={(e) => handleFieldChange('mouza', e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 font-medium text-sm focus:bg-white focus:ring-2 focus:ring-emerald-600 focus:outline-none transition-all"
+                    />
+                  </div>
+
+                  {/* Owner Name */}
+                  <div className="sm:col-span-2 space-y-1.5">
+                    <label className="text-xs font-bold text-slate-700 block">
+                      {t('upload.field_owner')}
+                    </label>
+                    <input
+                      type="text"
+                      value={editableFields['owner_name'] || editableFields['owner'] || ''}
+                      onChange={(e) => {
+                        handleFieldChange('owner_name', e.target.value);
+                        handleFieldChange('owner', e.target.value);
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 font-medium text-sm focus:bg-white focus:ring-2 focus:ring-emerald-600 focus:outline-none transition-all"
+                    />
+                  </div>
+
+                  {/* Father's / Husband's Name */}
+                  <div className="sm:col-span-2 space-y-1.5">
+                    <label className="text-xs font-bold text-slate-700 block">
+                      {t('upload.field_father')}
+                    </label>
+                    <input
+                      type="text"
+                      value={editableFields['father_name'] || ''}
+                      onChange={(e) => handleFieldChange('father_name', e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 font-medium text-sm focus:bg-white focus:ring-2 focus:ring-emerald-600 focus:outline-none transition-all"
+                    />
+                  </div>
+
+                  {/* Plot Numbers */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-700 block">
+                      {t('upload.field_plot')}
+                    </label>
+                    <input
+                      type="text"
+                      value={editableFields['plot_numbers'] || editableFields['plot'] || ''}
+                      onChange={(e) => {
+                        handleFieldChange('plot_numbers', e.target.value);
+                        handleFieldChange('plot', e.target.value);
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 font-medium text-sm focus:bg-white focus:ring-2 focus:ring-emerald-600 focus:outline-none transition-all"
+                    />
+                  </div>
+
+                  {/* Land Area */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-700 block">
+                      {t('upload.field_area')}
+                    </label>
+                    <input
+                      type="text"
+                      value={editableFields['total_area'] || editableFields['area'] || ''}
+                      onChange={(e) => {
+                        handleFieldChange('total_area', e.target.value);
+                        handleFieldChange('area', e.target.value);
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 font-medium text-sm focus:bg-white focus:ring-2 focus:ring-emerald-600 focus:outline-none transition-all"
+                    />
+                  </div>
+
+                  {/* Land Type */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-700 block">
+                      {t('upload.field_land_type')}
+                    </label>
+                    <input
+                      type="text"
+                      value={editableFields['land_type'] || ''}
+                      onChange={(e) => handleFieldChange('land_type', e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 font-medium text-sm focus:bg-white focus:ring-2 focus:ring-emerald-600 focus:outline-none transition-all"
+                    />
+                  </div>
+
+                  {/* Issue Date */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-700 block">
+                      {t('upload.field_date')}
+                    </label>
+                    <input
+                      type="text"
+                      value={editableFields['issue_date'] || editableFields['reg_date'] || ''}
+                      onChange={(e) => {
+                        handleFieldChange('issue_date', e.target.value);
+                        handleFieldChange('reg_date', e.target.value);
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 font-medium text-sm focus:bg-white focus:ring-2 focus:ring-emerald-600 focus:outline-none transition-all"
+                    />
                   </div>
                 </div>
-              ) : (
-                <div
-                  className={`w-16 h-16 rounded-2xl flex items-center justify-center transition-transform ${
-                    selectedFile
-                      ? 'bg-emerald-100 text-emerald-700'
-                      : 'bg-emerald-50 text-emerald-700'
-                  }`}
-                >
-                  {selectedFile ? (
-                    <FileCheck className="w-8 h-8" />
-                  ) : (
-                    <UploadIcon className="w-8 h-8 animate-bounce-short" />
-                  )}
-                </div>
-              )}
 
-              {selectedFile ? (
-                <div className="space-y-1">
-                  <p className="font-bold text-slate-900 text-base max-w-md mx-auto truncate">
-                    {selectedFile.name}
-                  </p>
-                  <p className="text-xs text-slate-500 font-mono">
-                    {formatFileSize(selectedFile.size)} &bull; {selectedFile.type || 'Document'}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      clearSelectedFile();
-                    }}
-                    className="inline-flex items-center gap-1 text-xs text-rose-600 hover:text-rose-700 font-medium pt-1"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                    <span>{t('upload.remove_file')}</span>
-                  </button>
+                {/* Collapsible/Full OCR Text editor */}
+                <div className="pt-2">
+                  <label className="text-xs font-bold text-slate-700 block mb-1.5">
+                    সম্পূর্ণ উদ্ধারকৃত OCR টেক্সট (প্রয়োজনে পরিবর্তন করুন):
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={editableOcrText}
+                    onChange={(e) => setEditableOcrText(e.target.value)}
+                    className="w-full p-3 rounded-xl border border-slate-200 bg-slate-50/50 text-xs font-mono text-slate-800 focus:bg-white focus:ring-2 focus:ring-emerald-600 focus:outline-none transition-all"
+                  />
                 </div>
-              ) : (
-                <div className="space-y-1">
-                  <p className="text-base font-semibold text-slate-800">
-                    {t('upload.drag_drop')}
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    {t('upload.supported')}
-                  </p>
-                </div>
+              </div>
+            </div>
+
+            {/* Bottom Actions: Verify & Save OR Upload Another */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  clearSelectedFile();
+                }}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl border border-slate-300 hover:border-slate-400 text-slate-700 font-semibold text-sm transition-all"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>{t('upload.upload_another')}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleVerifyAndSave}
+                disabled={isSavingVerified}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-sm sm:text-base shadow-md shadow-emerald-700/20 active:scale-95 transition-all disabled:bg-slate-300"
+              >
+                {isSavingVerified ? (
+                  <>
+                    <LoadingSpinner size="sm" message="" />
+                    <span>{t('upload.saving')}</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-5 h-5" />
+                    <span>{t('upload.verify_and_save')}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* ===================================================================== */
+        /* STANDARD UPLOAD VIEW: Select File or Use Demo File                    */
+        /* ===================================================================== */
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-10 space-y-8">
+          {/* Quick Demo Document Option Banner */}
+          <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-slate-50 border border-emerald-200/80 rounded-2xl p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-emerald-600" />
+                <span className="font-bold text-slate-900 text-sm sm:text-base">
+                  {t('upload.or_use_demo')}
+                </span>
+              </div>
+              {isLoadingDemo && (
+                <span className="text-xs font-semibold text-emerald-700 flex items-center gap-1.5">
+                  <LoadingSpinner size="sm" message="" />
+                  <span>লোড হচ্ছে...</span>
+                </span>
               )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              {/* Demo Khatian Button */}
+              <button
+                type="button"
+                onClick={() => handleUseDemo('khatian')}
+                disabled={isLoadingDemo || isUploading}
+                className={`p-3.5 rounded-xl border text-left transition-all flex items-center gap-3.5 ${
+                  docType === 'khatian' && selectedFile?.name.includes('khatian')
+                    ? 'border-emerald-600 bg-white ring-2 ring-emerald-500 shadow-sm'
+                    : 'border-emerald-200 hover:border-emerald-400 bg-white/90 hover:bg-white'
+                }`}
+              >
+                <div className="w-12 h-12 rounded-lg bg-emerald-100 flex items-center justify-center shrink-0 overflow-hidden border border-emerald-200">
+                  <img
+                    src="/demo/khatian_demo.png"
+                    alt="নমুনা খতিয়ান"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <ScrollText className="w-4 h-4 text-emerald-700 shrink-0" />
+                    <span className="font-bold text-slate-900 text-sm truncate">
+                      {t('upload.use_demo_khatian')}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 truncate mt-0.5">
+                    {t('upload.demo_khatian_sub')}
+                  </p>
+                </div>
+              </button>
+
+              {/* Demo Porcha Button */}
+              <button
+                type="button"
+                onClick={() => handleUseDemo('porcha')}
+                disabled={isLoadingDemo || isUploading}
+                className={`p-3.5 rounded-xl border text-left transition-all flex items-center gap-3.5 ${
+                  docType === 'porcha' && selectedFile?.name.includes('porcha')
+                    ? 'border-emerald-600 bg-white ring-2 ring-emerald-500 shadow-sm'
+                    : 'border-emerald-200 hover:border-emerald-400 bg-white/90 hover:bg-white'
+                }`}
+              >
+                <div className="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center shrink-0 overflow-hidden border border-blue-200">
+                  <img
+                    src="/demo/porcha_demo.jpg"
+                    alt="নমুনা পর্চা"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <FileText className="w-4 h-4 text-blue-700 shrink-0" />
+                    <span className="font-bold text-slate-900 text-sm truncate">
+                      {t('upload.use_demo_porcha')}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 truncate mt-0.5">
+                    {t('upload.demo_porcha_sub')}
+                  </p>
+                </div>
+              </button>
             </div>
           </div>
 
-          {/* Submit Button & Direct Demo Action */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">
+          <form onSubmit={handleUpload} className="space-y-6">
+            {/* Document Type Selector */}
             <div>
-              {(!selectedFile && (docType === 'khatian' || docType === 'porcha')) && (
-                <button
-                  type="button"
-                  onClick={() => handleUseDemo(docType as 'khatian' | 'porcha')}
-                  className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-3.5 py-2 rounded-xl transition-colors"
-                >
-                  <Sparkles className="w-4 h-4 text-emerald-600" />
-                  <span>
-                    {docType === 'khatian'
-                      ? 'নমুনা খতিয়ান ফাইল লোড করুন'
-                      : 'নমুনা পর্চা ফাইল লোড করুন'}
-                  </span>
-                </button>
-              )}
+              <label className="block text-sm font-bold text-slate-800 mb-2.5">
+                {t('upload.doc_type')}
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {[
+                  { type: 'khatian', label: t('upload.khatian'), desc: 'সি.এস, এস.এ, আর.এস ও বি.এস' },
+                  { type: 'porcha', label: t('upload.porcha'), desc: 'জরিপ পরবর্তী রেকর্ড' },
+                  { type: 'deed', label: t('upload.deed'), desc: 'সাব-রেজিস্ট্রি ক্রয়-বিক্রয় দলিল' },
+                ].map((item) => (
+                  <button
+                    key={item.type}
+                    type="button"
+                    onClick={() => setDocType(item.type as DocType)}
+                    className={`p-4 rounded-2xl border text-left transition-all ${
+                      docType === item.type
+                        ? 'border-emerald-600 bg-emerald-50/70 ring-2 ring-emerald-600/30'
+                        : 'border-slate-200 hover:border-slate-300 bg-white'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-bold text-slate-900 text-sm">{item.label}</span>
+                      <DocumentBadge type={item.type} size="sm" />
+                    </div>
+                    <span className="text-xs text-slate-500 block truncate">{item.desc}</span>
+                  </button>
+                ))}
+              </div>
             </div>
 
-            <button
-              type="submit"
-              disabled={isUploading || !selectedFile}
-              className={`w-full sm:w-auto px-8 py-3.5 rounded-xl font-bold text-sm md:text-base text-white transition-all shadow-md flex items-center justify-center gap-2 ${
-                isUploading || !selectedFile
-                  ? 'bg-slate-300 cursor-not-allowed text-slate-500 shadow-none'
-                  : 'bg-emerald-700 hover:bg-emerald-800 active:scale-95 shadow-emerald-700/20'
+            {/* Drag & Drop Zone */}
+            <div
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className={`border-2 border-dashed rounded-3xl p-6 sm:p-10 text-center cursor-pointer transition-all duration-200 ${
+                isDragging
+                  ? 'border-emerald-600 bg-emerald-50/60 scale-[1.01]'
+                  : selectedFile
+                  ? 'border-emerald-400 bg-emerald-50/20'
+                  : 'border-slate-300 hover:border-emerald-500 hover:bg-slate-50/50'
               }`}
             >
-              {isUploading ? (
-                <>
-                  <LoadingSpinner size="sm" message="" />
-                  <span>{t('upload.processing')}</span>
-                </>
-              ) : (
-                <>
-                  <UploadIcon className="w-5 h-5" />
-                  <span>{t('upload.upload_and_process')}</span>
-                </>
-              )}
-            </button>
-          </div>
-        </form>
-      </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".jpg,.jpeg,.png,.pdf"
+                onChange={handleFileChange}
+                className="hidden"
+              />
+
+              <div className="flex flex-col items-center justify-center space-y-3">
+                {filePreviewUrl ? (
+                  <div className="relative group">
+                    <div className="w-24 h-28 sm:w-28 sm:h-32 rounded-xl border border-slate-200 shadow-sm overflow-hidden bg-white mx-auto">
+                      <img
+                        src={filePreviewUrl}
+                        alt="Preview"
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="absolute -top-2 -right-2 bg-emerald-600 text-white rounded-full p-1 shadow">
+                      <FileCheck className="w-4 h-4" />
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    className={`w-16 h-16 rounded-2xl flex items-center justify-center transition-transform ${
+                      selectedFile
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : 'bg-emerald-50 text-emerald-700'
+                    }`}
+                  >
+                    {selectedFile ? (
+                      <FileCheck className="w-8 h-8" />
+                    ) : (
+                      <UploadIcon className="w-8 h-8 animate-bounce-short" />
+                    )}
+                  </div>
+                )}
+
+                {selectedFile ? (
+                  <div className="space-y-1">
+                    <p className="font-bold text-slate-900 text-base max-w-md mx-auto truncate">
+                      {selectedFile.name}
+                    </p>
+                    <p className="text-xs text-slate-500 font-mono">
+                      {formatFileSize(selectedFile.size)} &bull; {selectedFile.type || 'Document'}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        clearSelectedFile();
+                      }}
+                      className="inline-flex items-center gap-1 text-xs text-rose-600 hover:text-rose-700 font-medium pt-1"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      <span>{t('upload.remove_file')}</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <p className="text-base font-semibold text-slate-800">
+                      {t('upload.drag_drop')}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {t('upload.supported')}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Submit Button & Direct Demo Action */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">
+              <div>
+                {!selectedFile && (docType === 'khatian' || docType === 'porcha') && (
+                  <button
+                    type="button"
+                    onClick={() => handleUseDemo(docType as 'khatian' | 'porcha')}
+                    className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-3.5 py-2 rounded-xl transition-colors"
+                  >
+                    <Sparkles className="w-4 h-4 text-emerald-600" />
+                    <span>
+                      {docType === 'khatian'
+                        ? 'নমুনা খতিয়ান ফাইল লোড করুন'
+                        : 'নমুনা পর্চা ফাইল লোড করুন'}
+                    </span>
+                  </button>
+                )}
+              </div>
+
+              <button
+                type="submit"
+                disabled={isUploading || !selectedFile}
+                className={`w-full sm:w-auto px-8 py-3.5 rounded-xl font-bold text-sm md:text-base text-white transition-all shadow-md flex items-center justify-center gap-2 ${
+                  isUploading || !selectedFile
+                    ? 'bg-slate-300 cursor-not-allowed text-slate-500 shadow-none'
+                    : 'bg-emerald-700 hover:bg-emerald-800 active:scale-95 shadow-emerald-700/20'
+                }`}
+              >
+                {isUploading ? (
+                  <>
+                    <LoadingSpinner size="sm" message="" />
+                    <span>{t('upload.processing')}</span>
+                  </>
+                ) : (
+                  <>
+                    <UploadIcon className="w-5 h-5" />
+                    <span>{t('upload.upload_and_process')}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 };

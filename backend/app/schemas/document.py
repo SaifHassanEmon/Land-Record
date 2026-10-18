@@ -42,6 +42,12 @@ class DocumentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class DocumentUpdateRequest(BaseModel):
+    extracted_fields: Optional[Dict[str, Any]] = None
+    ocr_text: Optional[str] = None
+    doc_type: Optional[str] = None
+
+
 class DocumentListResponse(BaseModel):
     items: List[DocumentResponse]
     total: int

@@ -21,6 +21,7 @@ from app.schemas.document import (
     DocumentListResponse,
     DocumentResponse,
     DocumentType,
+    DocumentUpdateRequest,
     SearchResponse,
 )
 from app.utils.file_handler import (
@@ -146,6 +147,35 @@ def get_document(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Document with ID {document_id} not found",
         )
+    return doc
+
+
+@router.put(
+    "/{document_id}",
+    response_model=DocumentResponse,
+    summary="Update document fields and text",
+    description="Allows verifying, editing, and saving extracted information for a document.",
+)
+def update_document(
+    document_id: int,
+    payload: DocumentUpdateRequest,
+    db: Session = Depends(get_db),
+):
+    doc = db.query(Document).filter(Document.id == document_id).first()
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document with ID {document_id} not found",
+        )
+    if payload.extracted_fields is not None:
+        doc.extracted_fields = payload.extracted_fields
+    if payload.ocr_text is not None:
+        doc.ocr_text = payload.ocr_text
+    if payload.doc_type is not None:
+        doc.doc_type = payload.doc_type.strip().lower()
+
+    db.commit()
+    db.refresh(doc)
     return doc
 
 
