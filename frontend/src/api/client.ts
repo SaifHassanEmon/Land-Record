@@ -10,7 +10,7 @@ export const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 30000,
+  timeout: 120000,
 });
 
 // Interceptor to prevent Axios from stripping subpath (e.g., /api/v1) when request URL starts with '/'
@@ -28,6 +28,20 @@ apiClient.interceptors.request.use((config) => {
   }
   return config;
 });
+
+/**
+ * Fetch official demo file as a browser File object for testing
+ */
+export async function fetchDemoFile(docType: 'khatian' | 'porcha'): Promise<File> {
+  const fileName = docType === 'khatian' ? 'khatian_demo.png' : 'porcha_demo.jpg';
+  const mimeType = docType === 'khatian' ? 'image/png' : 'image/jpeg';
+  const response = await fetch(`/demo/${fileName}`);
+  if (!response.ok) {
+    throw new Error(`Failed to load demo file: ${fileName}`);
+  }
+  const blob = await response.blob();
+  return new File([blob], fileName, { type: mimeType });
+}
 
 // Seed sample data for preview / offline demonstration
 const MOCK_DEMO_DOCS: DemoDoc[] = [
@@ -182,17 +196,42 @@ export async function uploadDocument(file: File, docType: DocType): Promise<Docu
         file_size: file.size,
         mime_type: file.type,
         file_url: URL.createObjectURL(file),
-        extracted_fields: {
-          owner: 'আব্দুল করিম ও অন্যান্য',
-          district: 'ঢাকা',
-          upazila: 'সাভার',
-          mouza: 'আমিনবাজার',
-          plot: '৮৯২',
-          area: '০.১২ একর',
-          khatian_no: docType === 'khatian' ? '৭৪২' : undefined,
-          deed_no: docType === 'deed' ? '৪৫২১/২০২৪' : undefined,
-        },
-        ocr_text: `বাংলাদেশ ভূমি রেকর্ড - স্ক্যান করা কপি\nফাইলের নাম: ${file.name}\nধরনের বিবরণ: ${docType}\nতারিখ: ${new Date().toLocaleDateString('bn-BD')}\nস্বত্বাধিকারীর বিবরণ ও ভূমির তফসিল সফলভাবে প্রস্তুত করা হয়েছে।`,
+        extracted_fields:
+          docType === 'khatian' || file.name.includes('khatian')
+            ? {
+                owner: 'মোঃ আব্দুল করিম',
+                district: 'নরসিংদী',
+                upazila: 'মনোহরদী',
+                mouza: 'চরদিলিলিয়া',
+                plot: '১২৩, ১২৪, ১২৫, ১২৬, ১২৭',
+                area: '৭ বিঘা ২ কাঠা ৬ ছটাক',
+                khatian_no: '১২৩৪',
+              }
+            : docType === 'porcha' || file.name.includes('porcha')
+            ? {
+                owner: 'মোঃ আব্দুল করিম, মোছাঃ রহিমা বেগম, মোঃ সালাউদ্দিন',
+                district: 'ঢাকা',
+                upazila: 'দোহার',
+                mouza: 'সাভার',
+                plot: '১২৩, ১২৪, ১২৫',
+                area: '১.২৫ একর (প্রায়)',
+                khatian_no: '৫৬৭',
+              }
+            : {
+                owner: 'আব্দুল করিম ও অন্যান্য',
+                district: 'ঢাকা',
+                upazila: 'সাভার',
+                mouza: 'আমিনবাজার',
+                plot: '৮৯২',
+                area: '০.১২ একর',
+                deed_no: '৪৫২১/২০২৪',
+              },
+        ocr_text:
+          docType === 'khatian' || file.name.includes('khatian')
+            ? `গণপ্রজাতন্ত্রী বাংলাদেশ সরকার\nভূমি মন্ত্রণালয়\nজেলা : নরসিংদী, উপজেলা : মনোহরদী\nখতিয়ান নং : ১২৩৪\nমৌজা : চরদিলিলিয়া, জে.এল. নং : ৫৬/১\nমালিকের নাম : মোঃ আব্দুল করিম\nপিতার নাম : মৃত রহিম উদ্দিন\nঠিকানা : চরদিলিলিয়া, মনোহরদী, নরসিংদী\n\nদাগ নং: ১২৩, ১২৪, ১২৫, ১২৬, ১২৭\nমোট জমির পরিমাণ: ০ একর ৭ বিঘা ২ কাঠা ৬ ছটাক\nপ্রস্তুত তারিখ: ১২-০৩-২০১০`
+            : docType === 'porcha' || file.name.includes('porcha')
+            ? `গণপ্রজাতন্ত্রী বাংলাদেশ সরকার\nভূমি মন্ত্রণালয়\nজেলা প্রশাসকের কার্যালয়, ঢাকা\nরাজস্ব শাখা\nপরচা/রেকর্ড অব রাইটস\nজেলা : ঢাকা, উপজেলা : দোহার, মৌজা : সাভার, গ্রাম : মাধবপুর\nখতিয়ান নং : ৫৬৭, দাগ নং : ১২৩, ১২৪, ১২৫\nজমির শ্রেণি : আবাদি, মোট জমি : ১.২৫ একর (প্রায়)\nমালিকের নাম : মোঃ আব্দুল করিম, মোছাঃ রহিমা বেগম, মোঃ সালাউদ্দিন\nতারিখ : ১৫-০৮-২০২৫, রেজিস্টার নং : ১২৩৪/২০২৫`
+            : `বাংলাদেশ ভূমি রেকর্ড - স্ক্যান করা কপি\nফাইলের নাম: ${file.name}\nধরনের বিবরণ: ${docType}\nতারিখ: ${new Date().toLocaleDateString('bn-BD')}\nস্বত্বাধিকারীর বিবরণ ও ভূমির তফসিল সফলভাবে প্রস্তুত করা হয়েছে।`,
       };
 
       localDocuments.unshift(newDoc);

@@ -51,3 +51,10 @@ venv.bak/
 *.swo
 .DS_Store
 Thumbs.db
+
+# Storage & DB
+*.db
+*.sqlite3
+backend/uploads/*
+!backend/uploads/.gitkeep
+

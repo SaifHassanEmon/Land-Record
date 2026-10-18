@@ -46,7 +46,14 @@
     "select_file_warning": "Please choose a file to upload",
     "uploading_all": "Processing all demo documents...",
     "upload_all_success": "All demo documents uploaded successfully!",
-    "remove_file": "Remove file"
+    "remove_file": "Remove file",
+    "use_demo_file": "Use Demo File",
+    "use_demo_khatian": "Use Demo Khatian",
+    "use_demo_porcha": "Use Demo Porcha",
+    "demo_khatian_sub": "Narsingdi, Monohardi (Khatian No 1234)",
+    "demo_porcha_sub": "Dhaka, Dohar (Khatian No 567)",
+    "or_use_demo": "Or use a sample demo document for testing:",
+    "upload_and_process": "Upload & Process"
   },
   "documents": {
     "title": "All Documents",

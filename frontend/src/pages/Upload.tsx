@@ -1,25 +1,19 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   Upload as UploadIcon,
   FileCheck,
-  Download,
   CheckCircle2,
   AlertCircle,
   Sparkles,
-  FileText,
   X,
-  ArrowRight,
-  Layers,
+  FileText,
+  ScrollText,
+  Image as ImageIcon,
 } from 'lucide-react';
-import { DocType, DemoDoc } from '../types';
-import {
-  uploadDocument,
-  getDemoDocs,
-  uploadAllDemoDocs,
-  apiClient,
-} from '../api/client';
+import { DocType } from '../types';
+import { uploadDocument, fetchDemoFile } from '../api/client';
 import { DocumentBadge } from '../components/DocumentBadge';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 
@@ -29,33 +23,13 @@ export const Upload: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
   const [docType, setDocType] = useState<DocType>('khatian');
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [isLoadingDemo, setIsLoadingDemo] = useState<boolean>(false);
   const [uploadSuccess, setUploadSuccess] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  // Demo docs states
-  const [demoDocs, setDemoDocs] = useState<DemoDoc[]>([]);
-  const [loadingDemoDocs, setLoadingDemoDocs] = useState<boolean>(true);
-  const [isUploadingAllDemo, setIsUploadingAllDemo] = useState<boolean>(false);
-  const [demoSuccessMsg, setDemoSuccessMsg] = useState<string | null>(null);
-
-  useEffect(() => {
-    async function fetchDemos() {
-      try {
-        setLoadingDemoDocs(true);
-        const docs = await getDemoDocs();
-        setDemoDocs(Array.isArray(docs) ? docs : []);
-      } catch (err) {
-        console.error('Failed to load demo docs:', err);
-        setDemoDocs([]);
-      } finally {
-        setLoadingDemoDocs(false);
-      }
-    }
-    fetchDemos();
-  }, []);
 
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -76,15 +50,51 @@ export const Upload: React.FC = () => {
 
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
-      setSelectedFile(file);
-      setErrorMessage(null);
+      setNewFile(file);
     }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      setSelectedFile(e.target.files[0]);
+      setNewFile(e.target.files[0]);
+    }
+  };
+
+  const setNewFile = (file: File) => {
+    setSelectedFile(file);
+    setErrorMessage(null);
+    if (file.type.startsWith('image/')) {
+      const url = URL.createObjectURL(file);
+      setFilePreviewUrl(url);
+    } else {
+      setFilePreviewUrl(null);
+    }
+  };
+
+  const clearSelectedFile = () => {
+    if (filePreviewUrl) {
+      URL.revokeObjectURL(filePreviewUrl);
+    }
+    setSelectedFile(null);
+    setFilePreviewUrl(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  /**
+   * Loads the authentic user-provided demo image matching the selected or requested docType
+   */
+  const handleUseDemo = async (targetType: 'khatian' | 'porcha') => {
+    try {
+      setIsLoadingDemo(true);
       setErrorMessage(null);
+      setDocType(targetType);
+      const file = await fetchDemoFile(targetType);
+      setNewFile(file);
+    } catch (err: any) {
+      console.error('Failed to load demo file:', err);
+      setErrorMessage(err.message || 'নমুনা ফাইল লোড করতে সমস্যা হয়েছে।');
+    } finally {
+      setIsLoadingDemo(false);
     }
   };
 
@@ -104,45 +114,12 @@ export const Upload: React.FC = () => {
       // Redirect to documents list after a brief delay
       setTimeout(() => {
         navigate('/documents');
-      }, 1200);
+      }, 1000);
     } catch (err: any) {
       console.error('Upload failed:', err);
       setErrorMessage(err.message || t('common.error'));
     } finally {
       setIsUploading(false);
-    }
-  };
-
-  const handleUploadAllDemo = async () => {
-    try {
-      setIsUploadingAllDemo(true);
-      setErrorMessage(null);
-      await uploadAllDemoDocs();
-      setDemoSuccessMsg(t('upload.upload_all_success'));
-
-      setTimeout(() => {
-        navigate('/documents');
-      }, 1200);
-    } catch (err: any) {
-      console.error('Upload all demo docs failed:', err);
-      setErrorMessage(err.message || t('common.error'));
-    } finally {
-      setIsUploadingAllDemo(false);
-    }
-  };
-
-  const handleDownloadDemo = async (demo: DemoDoc) => {
-    try {
-      // Direct download trigger
-      const downloadEndpoint = demo.download_url || `/demo-docs/${demo.id}/download`;
-      const fullUrl = downloadEndpoint.startsWith('http')
-        ? downloadEndpoint
-        : `${apiClient.defaults.baseURL || '/api/v1'}${downloadEndpoint.startsWith('/') ? '' : '/'}${downloadEndpoint}`;
-
-      // Open in new tab or trigger download
-      window.open(fullUrl, '_blank');
-    } catch (err) {
-      console.error('Failed to download demo doc:', err);
     }
   };
 
@@ -154,7 +131,7 @@ export const Upload: React.FC = () => {
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-12">
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
       {/* Header */}
       <div className="text-center max-w-2xl mx-auto space-y-2">
         <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
@@ -165,7 +142,7 @@ export const Upload: React.FC = () => {
         </p>
       </div>
 
-      {/* Main Upload Form */}
+      {/* Main Upload Container */}
       <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-10 space-y-8">
         {/* Error Alert */}
         {errorMessage && (
@@ -185,6 +162,88 @@ export const Upload: React.FC = () => {
             </div>
           </div>
         )}
+
+        {/* Quick Demo Document Option Banner */}
+        <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-slate-50 border border-emerald-200/80 rounded-2xl p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-emerald-600" />
+              <span className="font-bold text-slate-900 text-sm sm:text-base">
+                {t('upload.or_use_demo')}
+              </span>
+            </div>
+            {isLoadingDemo && (
+              <span className="text-xs font-semibold text-emerald-700 flex items-center gap-1.5">
+                <LoadingSpinner size="sm" message="" />
+                <span>লোড হচ্ছে...</span>
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            {/* Demo Khatian Button */}
+            <button
+              type="button"
+              onClick={() => handleUseDemo('khatian')}
+              disabled={isLoadingDemo || isUploading}
+              className={`p-3.5 rounded-xl border text-left transition-all flex items-center gap-3.5 ${
+                docType === 'khatian' && selectedFile?.name.includes('khatian')
+                  ? 'border-emerald-600 bg-white ring-2 ring-emerald-500 shadow-sm'
+                  : 'border-emerald-200 hover:border-emerald-400 bg-white/90 hover:bg-white'
+              }`}
+            >
+              <div className="w-12 h-12 rounded-lg bg-emerald-100 flex items-center justify-center shrink-0 overflow-hidden border border-emerald-200">
+                <img
+                  src="/demo/khatian_demo.png"
+                  alt="নমুনা খতিয়ান"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <ScrollText className="w-4 h-4 text-emerald-700 shrink-0" />
+                  <span className="font-bold text-slate-900 text-sm truncate">
+                    {t('upload.use_demo_khatian')}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 truncate mt-0.5">
+                  {t('upload.demo_khatian_sub')}
+                </p>
+              </div>
+            </button>
+
+            {/* Demo Porcha Button */}
+            <button
+              type="button"
+              onClick={() => handleUseDemo('porcha')}
+              disabled={isLoadingDemo || isUploading}
+              className={`p-3.5 rounded-xl border text-left transition-all flex items-center gap-3.5 ${
+                docType === 'porcha' && selectedFile?.name.includes('porcha')
+                  ? 'border-emerald-600 bg-white ring-2 ring-emerald-500 shadow-sm'
+                  : 'border-emerald-200 hover:border-emerald-400 bg-white/90 hover:bg-white'
+              }`}
+            >
+              <div className="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center shrink-0 overflow-hidden border border-blue-200">
+                <img
+                  src="/demo/porcha_demo.jpg"
+                  alt="নমুনা পর্চা"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <FileText className="w-4 h-4 text-blue-700 shrink-0" />
+                  <span className="font-bold text-slate-900 text-sm truncate">
+                    {t('upload.use_demo_porcha')}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 truncate mt-0.5">
+                  {t('upload.demo_porcha_sub')}
+                </p>
+              </div>
+            </button>
+          </div>
+        </div>
 
         <form onSubmit={handleUpload} className="space-y-6">
           {/* Document Type Selector */}
@@ -224,7 +283,7 @@ export const Upload: React.FC = () => {
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
-            className={`border-2 border-dashed rounded-3xl p-8 sm:p-12 text-center cursor-pointer transition-all duration-200 ${
+            className={`border-2 border-dashed rounded-3xl p-6 sm:p-10 text-center cursor-pointer transition-all duration-200 ${
               isDragging
                 ? 'border-emerald-600 bg-emerald-50/60 scale-[1.01]'
                 : selectedFile
@@ -241,19 +300,34 @@ export const Upload: React.FC = () => {
             />
 
             <div className="flex flex-col items-center justify-center space-y-3">
-              <div
-                className={`w-16 h-16 rounded-2xl flex items-center justify-center transition-transform ${
-                  selectedFile
-                    ? 'bg-emerald-100 text-emerald-700'
-                    : 'bg-emerald-50 text-emerald-700'
-                }`}
-              >
-                {selectedFile ? (
-                  <FileCheck className="w-8 h-8" />
-                ) : (
-                  <UploadIcon className="w-8 h-8 animate-bounce-short" />
-                )}
-              </div>
+              {filePreviewUrl ? (
+                <div className="relative group">
+                  <div className="w-24 h-28 sm:w-28 sm:h-32 rounded-xl border border-slate-200 shadow-sm overflow-hidden bg-white mx-auto">
+                    <img
+                      src={filePreviewUrl}
+                      alt="Preview"
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <div className="absolute -top-2 -right-2 bg-emerald-600 text-white rounded-full p-1 shadow">
+                    <FileCheck className="w-4 h-4" />
+                  </div>
+                </div>
+              ) : (
+                <div
+                  className={`w-16 h-16 rounded-2xl flex items-center justify-center transition-transform ${
+                    selectedFile
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : 'bg-emerald-50 text-emerald-700'
+                  }`}
+                >
+                  {selectedFile ? (
+                    <FileCheck className="w-8 h-8" />
+                  ) : (
+                    <UploadIcon className="w-8 h-8 animate-bounce-short" />
+                  )}
+                </div>
+              )}
 
               {selectedFile ? (
                 <div className="space-y-1">
@@ -267,13 +341,12 @@ export const Upload: React.FC = () => {
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setSelectedFile(null);
-                      if (fileInputRef.current) fileInputRef.current.value = '';
+                      clearSelectedFile();
                     }}
                     className="inline-flex items-center gap-1 text-xs text-rose-600 hover:text-rose-700 font-medium pt-1"
                   >
                     <X className="w-3.5 h-3.5" />
-                    <span>{t('upload.remove_file') || 'বাতিল করুন'}</span>
+                    <span>{t('upload.remove_file')}</span>
                   </button>
                 </div>
               ) : (
@@ -289,8 +362,25 @@ export const Upload: React.FC = () => {
             </div>
           </div>
 
-          {/* Submit Button */}
-          <div className="flex justify-end pt-2">
+          {/* Submit Button & Direct Demo Action */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">
+            <div>
+              {(!selectedFile && (docType === 'khatian' || docType === 'porcha')) && (
+                <button
+                  type="button"
+                  onClick={() => handleUseDemo(docType as 'khatian' | 'porcha')}
+                  className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-3.5 py-2 rounded-xl transition-colors"
+                >
+                  <Sparkles className="w-4 h-4 text-emerald-600" />
+                  <span>
+                    {docType === 'khatian'
+                      ? 'নমুনা খতিয়ান ফাইল লোড করুন'
+                      : 'নমুনা পর্চা ফাইল লোড করুন'}
+                  </span>
+                </button>
+              )}
+            </div>
+
             <button
               type="submit"
               disabled={isUploading || !selectedFile}
@@ -308,108 +398,13 @@ export const Upload: React.FC = () => {
               ) : (
                 <>
                   <UploadIcon className="w-5 h-5" />
-                  <span>{t('upload.upload_btn')}</span>
+                  <span>{t('upload.upload_and_process')}</span>
                 </>
               )}
             </button>
           </div>
         </form>
       </div>
-
-      {/* Demo Documents Section */}
-      <section className="bg-slate-100/70 rounded-3xl border border-slate-200 p-6 sm:p-8 space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-amber-500" />
-              <h2 className="text-lg sm:text-xl font-bold text-slate-900">
-                {t('upload.demo_title')}
-              </h2>
-            </div>
-            <p className="text-xs sm:text-sm text-slate-600">
-              {t('upload.demo_desc')}
-            </p>
-          </div>
-
-          {/* Upload All Demo Docs button */}
-          <button
-            type="button"
-            onClick={handleUploadAllDemo}
-            disabled={isUploadingAllDemo}
-            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-xs sm:text-sm shadow-sm transition-all active:scale-95 disabled:bg-slate-300 disabled:cursor-not-allowed shrink-0"
-          >
-            {isUploadingAllDemo ? (
-              <>
-                <LoadingSpinner size="sm" message="" />
-                <span>{t('upload.uploading_all')}</span>
-              </>
-            ) : (
-              <>
-                <Layers className="w-4 h-4" />
-                <span>{t('upload.demo_upload_all')}</span>
-              </>
-            )}
-          </button>
-        </div>
-
-        {demoSuccessMsg && (
-          <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span className="font-semibold">{demoSuccessMsg}</span>
-          </div>
-        )}
-
-        {/* Demo Documents Cards */}
-        {loadingDemoDocs ? (
-          <LoadingSpinner />
-        ) : Array.isArray(demoDocs) && demoDocs.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {demoDocs.map((demo, idx) => (
-              <div
-                key={demo.id || demo.file_name || `demo-${idx}`}
-                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:shadow-sm transition-all flex flex-col justify-between"
-              >
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <DocumentBadge type={demo.doc_type} size="sm" />
-                    {demo.size && (
-                      <span className="text-[11px] font-mono text-slate-400">
-                        {demo.size}
-                      </span>
-                    )}
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-slate-900 text-sm tracking-tight line-clamp-1">
-                      {demo.name || demo.file_name}
-                    </h4>
-                    <p className="text-xs text-slate-500 mt-1 line-clamp-2">
-                      {demo.description || demo.file_name}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="pt-4 mt-3 border-t border-slate-100 flex items-center justify-between">
-                  <span className="text-[11px] text-slate-400 font-mono truncate max-w-[120px]">
-                    {demo.file_name}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handleDownloadDemo(demo)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 text-xs font-semibold transition-colors"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>{t('upload.download')}</span>
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-6 text-slate-500 text-sm">
-            {t('documents.no_results')}
-          </div>
-        )}
-      </section>
     </div>
   );
 };
