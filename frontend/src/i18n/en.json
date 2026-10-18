@@ -45,7 +45,8 @@
     "select_type_warning": "Please select a document type",
     "select_file_warning": "Please choose a file to upload",
     "uploading_all": "Processing all demo documents...",
-    "upload_all_success": "All demo documents uploaded successfully!"
+    "upload_all_success": "All demo documents uploaded successfully!",
+    "remove_file": "Remove file"
   },
   "documents": {
     "title": "All Documents",

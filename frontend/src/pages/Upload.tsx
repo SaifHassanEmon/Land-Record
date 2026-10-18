@@ -364,9 +364,9 @@ export const Upload: React.FC = () => {
           <LoadingSpinner />
         ) : Array.isArray(demoDocs) && demoDocs.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {demoDocs.map((demo) => (
+            {demoDocs.map((demo, idx) => (
               <div
-                key={demo.id}
+                key={demo.id || demo.file_name || `demo-${idx}`}
                 className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:shadow-sm transition-all flex flex-col justify-between"
               >
                 <div className="space-y-3">
@@ -380,7 +380,7 @@ export const Upload: React.FC = () => {
                   </div>
                   <div>
                     <h4 className="font-bold text-slate-900 text-sm tracking-tight line-clamp-1">
-                      {demo.name}
+                      {demo.name || demo.file_name}
                     </h4>
                     <p className="text-xs text-slate-500 mt-1 line-clamp-2">
                       {demo.description || demo.file_name}
@@ -403,6 +403,10 @@ export const Upload: React.FC = () => {
                 </div>
               </div>
             ))}
+          </div>
+        ) : (
+          <div className="text-center py-6 text-slate-500 text-sm">
+            {t('documents.no_results')}
           </div>
         )}
       </section>
