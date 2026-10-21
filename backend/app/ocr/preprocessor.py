@@ -165,6 +165,8 @@ def preprocess_single_image(bgr_or_gray: np.ndarray) -> np.ndarray:
     Applies clean, text-preserving preprocessing:
     1. Grayscale conversion
     2. Intelligent deskew
+    3. Resolution upscale (target ~2000px height / 300 DPI for sharp Bengali OCR)
+    4. Contrast stretching & normalization
     Preserves exact Bengali strokes, ligatures, and numerals.
     """
     if len(bgr_or_gray.shape) == 3:
@@ -175,7 +177,20 @@ def preprocess_single_image(bgr_or_gray: np.ndarray) -> np.ndarray:
     # Deskew to ensure straight text lines for OCR
     deskewed = deskew_image(gray)
 
-    return deskewed
+    h, w = deskewed.shape[:2]
+    # Check if image resolution is low (< 1800px on the short/long edge)
+    # Bengali LSTM requires at least 30-40px font height to distinguish conjuncts & matras
+    if h < 1800 or w < 1800:
+        target_dim = 2000.0
+        scale = min(max(target_dim / h, target_dim / w), 3.5)
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+        deskewed = cv2.resize(deskewed, (new_w, new_h), interpolation=cv2.INTER_LANCZOS4)
+
+    # Normalize contrast to remove scan shadows and maximize text legibility
+    normalized = cv2.normalize(deskewed, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
+
+    return normalized
 
 
 def preprocess_document(file_path: Union[str, Path]) -> List[np.ndarray]:

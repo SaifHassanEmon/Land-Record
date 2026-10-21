@@ -168,9 +168,11 @@ export async function uploadDocument(file: File, docType: DocType): Promise<Docu
   formData.append('doc_type', docType);
 
   try {
+    // When sending FormData, Content-Type must remain undefined so the browser/axios
+    // automatically appends 'multipart/form-data; boundary=----WebKitFormBoundary...'
     const response = await apiClient.post('/documents/upload', formData, {
       headers: {
-        'Content-Type': 'multipart/form-data',
+        'Content-Type': undefined,
       },
     });
     const mapped = mapBackendDocument(response.data);
@@ -181,66 +183,20 @@ export async function uploadDocument(file: File, docType: DocType): Promise<Docu
     try {
       const response = await apiClient.post('/documents', formData, {
         headers: {
-          'Content-Type': 'multipart/form-data',
+          'Content-Type': undefined,
         },
       });
       const mapped = mapBackendDocument(response.data);
       localDocuments = [mapped, ...localDocuments.filter((d) => d.id !== mapped.id)];
       return mapped;
-    } catch (fallbackErr) {
-      console.warn('API upload failed, creating mock document representation:', fallbackErr);
-
-      const newDoc: DocumentItem = {
-        id: `doc-${Date.now()}`,
-        file_name: file.name,
-        original_filename: file.name,
-        doc_type: docType,
-        status: 'done',
-        confidence: 89,
-        created_at: new Date().toISOString(),
-        file_size: file.size,
-        mime_type: file.type,
-        file_url: URL.createObjectURL(file),
-        extracted_fields:
-          docType === 'khatian' || file.name.includes('khatian')
-            ? {
-                owner: 'মোঃ আব্দুল করিম',
-                district: 'নরসিংদী',
-                upazila: 'মনোহরদী',
-                mouza: 'চরদিলিলিয়া',
-                plot: '১২৩, ১২৪, ১২৫, ১২৬, ১২৭',
-                area: '৭ বিঘা ২ কাঠা ৬ ছটাক',
-                khatian_no: '১২৩৪',
-              }
-            : docType === 'porcha' || file.name.includes('porcha')
-            ? {
-                owner: 'মোঃ আব্দুল করিম, মোছাঃ রহিমা বেগম, মোঃ সালাউদ্দিন',
-                district: 'ঢাকা',
-                upazila: 'দোহার',
-                mouza: 'সাভার',
-                plot: '১২৩, ১২৪, ১২৫',
-                area: '১.২৫ একর (প্রায়)',
-                khatian_no: '৫৬৭',
-              }
-            : {
-                owner: 'আব্দুল করিম ও অন্যান্য',
-                district: 'ঢাকা',
-                upazila: 'সাভার',
-                mouza: 'আমিনবাজার',
-                plot: '৮৯২',
-                area: '০.১২ একর',
-                deed_no: '৪৫২১/২০২৪',
-              },
-        ocr_text:
-          docType === 'khatian' || file.name.includes('khatian')
-            ? `গণপ্রজাতন্ত্রী বাংলাদেশ সরকার\nভূমি মন্ত্রণালয়\nজেলা : নরসিংদী, উপজেলা : মনোহরদী\nখতিয়ান নং : ১২৩৪\nমৌজা : চরদিলিলিয়া, জে.এল. নং : ৫৬/১\nমালিকের নাম : মোঃ আব্দুল করিম\nপিতার নাম : মৃত রহিম উদ্দিন\nঠিকানা : চরদিলিলিয়া, মনোহরদী, নরসিংদী\n\nদাগ নং: ১২৩, ১২৪, ১২৫, ১২৬, ১২৭\nমোট জমির পরিমাণ: ০ একর ৭ বিঘা ২ কাঠা ৬ ছটাক\nপ্রস্তুত তারিখ: ১২-০৩-২০১০`
-            : docType === 'porcha' || file.name.includes('porcha')
-            ? `গণপ্রজাতন্ত্রী বাংলাদেশ সরকার\nভূমি মন্ত্রণালয়\nজেলা প্রশাসকের কার্যালয়, ঢাকা\nরাজস্ব শাখা\nপরচা/রেকর্ড অব রাইটস\nজেলা : ঢাকা, উপজেলা : দোহার, মৌজা : সাভার, গ্রাম : মাধবপুর\nখতিয়ান নং : ৫৬৭, দাগ নং : ১২৩, ১২৪, ১২৫\nজমির শ্রেণি : আবাদি, মোট জমি : ১.২৫ একর (প্রায়)\nমালিকের নাম : মোঃ আব্দুল করিম, মোছাঃ রহিমা বেগম, মোঃ সালাউদ্দিন\nতারিখ : ১৫-০৮-২০২৫, রেজিস্টার নং : ১২৩৪/২০২৫`
-            : `বাংলাদেশ ভূমি রেকর্ড - স্ক্যান করা কপি\nফাইলের নাম: ${file.name}\nধরনের বিবরণ: ${docType}\nতারিখ: ${new Date().toLocaleDateString('bn-BD')}\nস্বত্বাধিকারীর বিবরণ ও ভূমির তফসিল সফলভাবে প্রস্তুত করা হয়েছে।`,
-      };
-
-      localDocuments.unshift(newDoc);
-      return newDoc;
+    } catch (fallbackErr: any) {
+      console.error('Document upload failed:', fallbackErr);
+      const message =
+        fallbackErr?.response?.data?.detail ||
+        err?.response?.data?.detail ||
+        fallbackErr?.message ||
+        'দলিল আপলোড বা OCR প্রক্রিয়াকরণ সম্পন্ন হতে পারেনি। সার্ভার সংযোগ পরীক্ষা করুন।';
+      throw new Error(message);
     }
   }
 }

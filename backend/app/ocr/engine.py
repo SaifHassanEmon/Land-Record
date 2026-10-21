@@ -125,9 +125,45 @@ def run_pytesseract_on_image(image_arr: np.ndarray) -> Dict[str, Any]:
     # 2. Get high-quality full text with image_to_string using the detected language
     full_text = ""
     try:
-        full_text = pytesseract.image_to_string(image_arr, lang=used_lang).strip()
+        text_psm6 = pytesseract.image_to_string(image_arr, lang=used_lang, config="--psm 6").strip()
+        text_default = pytesseract.image_to_string(image_arr, lang=used_lang).strip()
+        full_text = text_psm6 if len(text_psm6) >= len(text_default) else text_default
     except Exception as e:
         logger.warning(f"pytesseract image_to_string error: {e}")
+
+    # 3. Zonal extraction for structured tabular land records
+    h, w = image_arr.shape[:2]
+    if h >= 600 and w >= 600:
+        extra_zones = []
+        try:
+            # Header zone (top 22% of document)
+            header_crop = image_arr[0:int(h * 0.22), :]
+            h_text = pytesseract.image_to_string(header_crop, lang=used_lang, config="--psm 6").strip()
+            if h_text and len(h_text) > 10:
+                extra_zones.append(h_text)
+        except Exception:
+            pass
+
+        try:
+            # Left owner column zone (x: 5% - 35%, y: 12% - 50%)
+            owner_crop = image_arr[int(h * 0.12):int(h * 0.50), int(w * 0.05):int(w * 0.35)]
+            o_text = pytesseract.image_to_string(owner_crop, lang=used_lang, config="--psm 6").strip()
+            if o_text and len(o_text) > 10:
+                extra_zones.append(o_text)
+        except Exception:
+            pass
+
+        try:
+            # Plot numbers column zone (x: 35% - 46%, y: 14% - 85%)
+            plot_crop = image_arr[int(h * 0.14):int(h * 0.85), int(w * 0.35):int(w * 0.46)]
+            p_text = pytesseract.image_to_string(plot_crop, lang=used_lang, config="--psm 6").strip()
+            if p_text and len(p_text) > 5:
+                extra_zones.append(p_text)
+        except Exception:
+            pass
+
+        if extra_zones:
+            full_text = "\n\n".join(extra_zones + [full_text])
 
     if data is None:
         logger.error("All pytesseract language options failed.")

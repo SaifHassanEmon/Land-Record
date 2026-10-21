@@ -14,12 +14,16 @@ def bn_to_en(text: str) -> str:
     return text.translate(BN_TO_EN_DIGITS)
 
 
-def clean_field_value(value: Optional[str]) -> Optional[str]:
+def clean_field_value(value: Optional[str], strip_digits: bool = False) -> Optional[str]:
     """Cleans punctuation, colons, extra dashes, semicolons, and whitespace from field values."""
     if not value:
         return None
-    val = re.sub(r"^[\s:：;\-—–.=|_।,।'\"]+", "", value)
-    val = re.sub(r"[\s:：;\-—–.=|_।,।'\"]+$", "", val)
+    val = re.sub(r"^[\s:：;\-—–.=|_।,।\'\"ঃ]+", "", value)
+    val = re.sub(r"[\s:：;\-—–.=|_।,।\'\"ঃ]+$", "", val)
+    if strip_digits:
+        val = re.sub(r"^[\s০-৯0-9:：;\-—–.=|_।,।\'\"ঃ]+", "", val)
+    # Strip leading revenue abbreviation prefixes like 'দং ', 'পিং ', 'সাং '
+    val = re.sub(r"^(?:দং|পিং|সাং)\s+", "", val)
     val = re.sub(r"\s+", " ", val)
     val = val.strip()
     # Reject header labels that accidentally matched
@@ -40,19 +44,19 @@ def normalize_ocr_text(text: str) -> str:
     # Normalize common abbreviations and misrecognitions
     t = re.sub(r"মো[;:\.]", "মোঃ ", t)
     t = re.sub(r"মোছা[;:\.]", "মোছাঃ ", t)
-    t = re.sub(r"জে\s*[.]?\s*এ\s*[.]?\s*এল", "জে.এল.", t)
-    t = re.sub(r"জে\s*[.]?\s*এল", "জে.এল.", t)
+    t = re.sub(r"জে\s*[,.]?\s*এ\s*[,.]?\s*এল", "জে.এল.", t)
+    t = re.sub(r"জে\s*[,.]?\s*এল", "জে.এল.", t)
     t = re.sub(r"খতিয়ান", "খতিয়ান", t)
     t = re.sub(r"পর্চ্চা|পরচা", "পর্চা", t)
     return t
 
 
-def search_first_match(patterns: List[str], text: str, flags: int = re.IGNORECASE) -> Optional[str]:
+def search_first_match(patterns: List[str], text: str, flags: int = re.IGNORECASE, strip_digits: bool = False) -> Optional[str]:
     """Tries multiple regex patterns in order and returns the first cleaned match."""
     for pattern in patterns:
         for match in re.finditer(pattern, text, flags):
             group_val = match.group(1) if match.lastindex and match.lastindex >= 1 else match.group(0)
-            cleaned = clean_field_value(group_val)
+            cleaned = clean_field_value(group_val, strip_digits=strip_digits)
             if cleaned:
                 return cleaned
     return None
@@ -100,59 +104,59 @@ def extract_khatian_fields(ocr_text: str) -> Dict[str, Any]:
 
     # 1. Khatian Number
     khatian_patterns = [
-        r"(?:খতিয়ান)\s*(?:নম্বর|নং|নঃ)?\s*[:：;\-—–.=]?\s*([০-৯0-9\-/]+)",
-        r"(?:খং|খঃ)\s*[:：;\-—–.=]?\s*([০-৯0-9\-/]+)",
+        r"(?:খতিয়ান|গান|খতি)\s*(?:নম্বর|নং|নঃ)?\s*[:：;\-—–.=ঃ]?\s*([০-৯0-9\-/]+)",
+        r"(?:খং|খঃ)\s*[:：;\-—–.=ঃ]?\s*([০-৯0-9\-/]+)",
         r"Khatian\s*(?:No|Number)?\s*[:：;\-—–.=]?\s*([0-9০-৯\-/]+)",
     ]
     fields["khatian_number"] = search_first_match(khatian_patterns, norm_text)
 
     # 2. District (জেলা)
     district_patterns = [
-        r"(?:জেলা|জিলা)\s*[:：;\-—–.=]?\s*([^\n\r,;:]{2,30}?)(?=(?:\s+(?:উপজেলা|থানা|মৌজা|জে|খতিয়ান)|$|\r|\n))",
+        r"(?:জেলা|জিলা|[^\u0980-\u09FF\w]?\s*লা)\s*[:：;\-—–.=ঃ০-৯\s]?\s*([^\n\r,;:]{2,30}?)(?=(?:\s+(?:উপজেলা|থানা|মৌজা|জে|খতিয়ান)|$|\r|\n))",
         r"District\s*[:：;\-—–.=]?\s*([a-zA-Z\s]+?)(?=(?:\s+(?:Upazila|Thana|Mouza)|$|\r|\n))",
     ]
-    fields["district"] = search_first_match(district_patterns, norm_text)
+    fields["district"] = search_first_match(district_patterns, norm_text, strip_digits=True)
 
     # 3. Upazila / Thana (উপজেলা / থানা)
     upazila_patterns = [
-        r"(?:উপজেলা|থানা)\s*[:：;\-—–.=]?\s*([^\n\r,;:]{2,30}?)(?=(?:\s+(?:জেলা|মৌজা|ইউনিয়ন|জে|খতিয়ান|দাগ)|$|\r|\n))",
+        r"(?:উপজেলা|থানা)\s*[:：;\-—–.=ঃ০-৯\s]?\s*([^\n\r,;:]{2,30}?)(?=(?:\s+(?:জেলা|মৌজা|ইউনিয়ন|জে|খতিয়ান|দাগ|ey)|$|\r|\n))",
         r"(?:Upazila|Thana)\s*[:：;\-—–.=]?\s*([a-zA-Z\s]+?)(?=(?:\s+(?:District|Mouza|Union)|$|\r|\n))",
     ]
-    fields["upazila"] = search_first_match(upazila_patterns, norm_text)
+    fields["upazila"] = search_first_match(upazila_patterns, norm_text, strip_digits=True)
 
     # 4. Union (ইউনিয়ন)
     union_patterns = [
-        r"(?:ইউনিয়ন)\s*(?:নং)?\s*[:：;\-—–.=]?\s*([^\n\r,;:]{2,30}?)(?=(?:\s+(?:উপজেলা|মৌজা)|$|\r|\n))",
+        r"(?:ইউনিয়ন)\s*(?:নং)?\s*[:：;\-—–.=ঃ]?\s*([^\n\r,;:]{2,30}?)(?=(?:\s+(?:উপজেলা|মৌজা)|$|\r|\n))",
         r"Union\s*(?:No)?\s*[:：;\-—–.=]?\s*([a-zA-Z0-9\s]+?)(?=(?:\s+(?:Upazila|Mouza)|$|\r|\n))",
     ]
-    fields["union_name"] = search_first_match(union_patterns, norm_text)
+    fields["union_name"] = search_first_match(union_patterns, norm_text, strip_digits=True)
 
     # 5. Mouza (মৌজা)
     mouza_patterns = [
-        r"(?:মৌজা|মৌজার\s*নাম)\s*[:：;\-—–.=]?\s*([^\n\r,;:]{2,35}?)(?=(?:\s+(?:জে|দাগ|খতিয়ান|গ্রাম|জমির)|$|\r|\n))",
+        r"(?:মৌজা|মৌজার\s*নাম|ey)\s*[:：;\-—–.=ঃ০-৯\s]?\s*([^\n\r,;:]{2,35}?)(?=(?:\s+(?:জে|দাগ|খতিয়ান|গ্রাম|জমির|FE)|$|\r|\n))",
         r"Mouza\s*[:：;\-—–.=]?\s*([a-zA-Z\s]+?)(?=(?:\s+(?:J\.?L\.?|Plot)|$|\r|\n))",
     ]
-    fields["mouza"] = search_first_match(mouza_patterns, norm_text)
+    fields["mouza"] = search_first_match(mouza_patterns, norm_text, strip_digits=True)
 
     # 6. J.L Number (জে এল নং)
     jl_patterns = [
-        r"(?:জে\.?এল\.?\s*(?:নং|নম্বর)?)\s*[:：;\-—–.=]?\s*([০-৯0-9\-/]+)",
+        r"(?:জে\s*[,.]?\s*এল\s*[,.]?\s*(?:নং|নম্বর)?)\s*[:：;\-—–.=ঃ]?\s*([০-৯0-9\-/]+)",
         r"(?:J\.?L\.?\s*(?:No|Number)?)\s*[:：;\-—–.=]?\s*([0-9০-৯\-/]+)",
     ]
     fields["jl_number"] = search_first_match(jl_patterns, norm_text)
 
     # 7. Former Khatian (সাবেক খতিয়ান)
     former_patterns = [
-        r"(?:সাবেক\s*খতিয়ান\s*(?:নং|নম্বর)?)\s*[:：;\-—–.=]?\s*([০-৯0-9\-/]+)",
+        r"(?:সাবেক\s*খতিয়ান\s*(?:নং|নম্বর)?)\s*[:：;\-—–.=ঃ]?\s*([০-৯0-9\-/]+)",
     ]
     former_match = search_first_match(former_patterns, norm_text)
     if former_match:
         fields["former_khatian"] = former_match
 
-    # 8. Owner Name (মালিক)
+    # 8. Owner Name (মালিক / দং)
     owner_patterns = [
-        r"মালিকের\s*নাম\s*[:：;\-—–.=]?\s*([^\n\r]{2,50}?)(?=(?:\s+(?:পিতার|পিতা|মাতার|মাতা|এনআইডি|ঠিকানা|দাগ|অংশ|মোট)|$|\r|\n))",
-        r"(?:মালিক|দখলদার|প্রজার\s*নাম|স্বত্বাধিকারী|রায়তের\s*নাম)\s*[:：;\-—–.=]?\s*([^\n\r]{2,50}?)(?=(?:\s+(?:পিতা|স্বামী|দাগ|অংশ|মোট)|$|\r|\n))",
+        r"মালিকের\s*নাম\s*[:：;\-—–.=ঃ]?\s*([^\n\r]{2,50}?)(?=(?:\s+(?:পিতার|পিতা|পিং|পং|মাতার|মাতা|এনআইডি|ঠিকানা|সাং|দাগ|অংশ|মোট)|$|\r|\n))",
+        r"(?:দং|মালিক|ম্যলক|দখলদার|প্রজার\s*নাম|স্বত্বাধিকারী|রায়তের\s*নাম)\s*[:：;\-—–.=ঃ]?\s*([^\n\r]{2,50}?)(?=(?:\s+(?:পিতা|পিং|পং|স্বামী|সাং|sae|দাগ|অংশ|মোট)|$|\r|\n))",
     ]
     fields["owner_name"] = search_first_match(owner_patterns, norm_text)
 
@@ -162,17 +166,19 @@ def extract_khatian_fields(ocr_text: str) -> Dict[str, Any]:
         if table_owners:
             fields["owner_name"] = ", ".join(table_owners)
 
-    # 9. Father's / Husband's Name (পিতা / স্বামী)
+    # 9. Father's / Husband's Name (পিতা / পিং / স্বামী)
     father_patterns = [
-        r"(?:পিতার\s*নাম|পিতা|স্বামীর\s*নাম|স্বামী|from\s+নাম)\s*[:：;\-—–.=]?\s*(?:মৃত\s+|মুত\s+)?([^\n\r]{2,50}?)(?=(?:\s+(?:মাতা|মাতার|ঠিকানা|দাগ|অংশ|এনআইডি)|$|\r|\n))",
+        r"(?:পিতার\s*নাম|পিতা|পিং|পং|স্বামীর\s*নাম|স্বামী|from\s+নাম)\s*[:：;\-—–.=ঃ]?\s*(?:মৃত\s+|মুত\s+)?([^\n\r]{2,50}?)(?=(?:\s+(?:মাতা|মাতার|ঠিকানা|সাং|sae|দাগ|অংশ|এনআইডি)|$|\r|\n))",
     ]
     father_match = search_first_match(father_patterns, norm_text)
     if father_match:
-        fields["father_name"] = father_match
+        # Strip OCR noise prefix on father's name (e.g. 'ধখোরশেদ' -> 'খোরশেদ')
+        cleaned_father = re.sub(r"^[ধঘবঢ়]\s*(?=খোর)", "", father_match)
+        fields["father_name"] = cleaned_father
 
-    # 10. Address (ঠিকানা)
+    # 10. Address (ঠিকানা / সাং)
     addr_patterns = [
-        r"(?:ঠিকানা|ঠিকা)\s*[:：;\-—–.=]?\s*([^\n\r]{3,70}?)(?=(?:\s+(?:দাগ|জমির|মোট)|$|\r|\n))",
+        r"(?:ঠিকানা|ঠিকা|সাং)\s*[:：;\-—–.=ঃ]?\s*([^\n\r]{2,70}?)(?=(?:\s+(?:দাগ|জমির|মোট)|$|\r|\n))",
     ]
     addr_match = search_first_match(addr_patterns, norm_text)
     if addr_match:
@@ -180,15 +186,21 @@ def extract_khatian_fields(ocr_text: str) -> Dict[str, Any]:
 
     # 11. Plot / Dag Numbers (দাগ নং)
     plot_patterns = [
-        r"(?:দাগ\s*(?:নং|নম্বর)?|দাগনং|প্লট\s*নং)\s*[:：;\-—–.=]?\s*([০-৯0-9\s,/\-]+?)(?=(?:\s+(?:জমির|পরিমাণ|শ্রেণী|শ্রেণি|মোট|মালিকের)|$|\r|\n))",
+        r"(?:দাগ\s*(?:নং|নম্বর)?|দাগনং|প্লট\s*নং)\s*[:：;\-—–.=ঃ]?\s*([০-৯0-9\s,/\-]+?)(?=(?:\s+(?:জমির|পরিমাণ|শ্রেণী|শ্রেণি|মোট|মালিকের)|$|\r|\n))",
         r"(?:Plot|Dag)\s*(?:No|Number)?\s*[:：;\-—–.=]?\s*([0-9০-৯\s,/\-]+)",
     ]
     fields["plot_numbers"] = search_first_match(plot_patterns, norm_text)
+    if not fields.get("plot_numbers"):
+        found_plots = re.findall(r"(?:^|\n)\s*([০-৯0-9]{2,4})\s*(?:ধানী|ডাঙ্গা|বাগান|বাস্তু|কবরস্থান|নাল|ভিটি|ধ|বৃ)?\s*(?=\n|$)", norm_text)
+        if len(found_plots) >= 2:
+            seen = set()
+            unique_plots = [p for p in found_plots if not (p in seen or seen.add(p))]
+            fields["plot_numbers"] = ", ".join(unique_plots[:15])
 
     # 12. Total Area (জমির পরিমাণ / মোট জমি)
     area_patterns = [
-        r"(?:সর্বমোট|মোট\s*জমির\s*পরিমাণ|মোট\s*জমি)\s*[:：;\-—–.=]?(?:.*?)([০-৯0-9.]+\s*(?:একর|শতক|শতাংশ|হেক্টর|বিঘা|কাঠা|ছটাক)+[^\n\r]*)",
-        r"(?:মোট\s*জমির\s*পরিমাণ|জমির\s*পরিমাণ|মোট\s*জমি)\s*[:：;\-—–.=]?\s*([০-৯0-9.]+\s*(?:একর|শতক|শতাংশ|বর্গফুট|বর্গমিটার|dismil|shotok|acre|acres|decimals)?)",
+        r"(?:সর্বমোট|মোট\s*জমির\s*পরিমাণ|মোট\s*জমি|জমি)\s*[:：;\-—–.=ঃ]?(?:.*?)([০-৯0-9.]+\s*(?:একর|শতক|শতাংশ|হেক্টর|বিঘা|কাঠা|ছটাক)+[^\n\r]*)",
+        r"(?:মোট\s*জমির\s*পরিমাণ|জমির\s*পরিমাণ|মোট\s*জমি|জমি)\s*[:：;\-—–.=ঃ]?\s*([০-৯0-9.]+\s*(?:একর|শতক|শতাংশ|বর্গফুট|বর্গমিটার|dismil|shotok|acre|acres|decimals)?)",
         r"([০-৯0-9.]+\s*(?:একর|শতক|শতাংশ))\s*(?:জমি)?",
         r"(?:Total\s*Area|Area\s*of\s*Land)\s*[:：;\-—–.=]?\s*([0-9০-৯.]+\s*(?:acre|shotok|decimal|sq\s*ft)?)",
     ]
