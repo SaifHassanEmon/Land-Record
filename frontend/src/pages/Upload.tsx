@@ -22,6 +22,7 @@ import { DocType, DocumentItem } from '../types';
 import { uploadDocument, updateDocument, fetchDemoFile } from '../api/client';
 import { DocumentBadge } from '../components/DocumentBadge';
 import { LoadingSpinner } from '../components/LoadingSpinner';
+import { OptionsDemoGuide } from '../components/OptionsDemoGuide';
 
 export const Upload: React.FC = () => {
   const { t } = useTranslation();
@@ -198,13 +199,18 @@ export const Upload: React.FC = () => {
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
       {/* Header */}
-      <div className="text-center max-w-2xl mx-auto space-y-2">
+      <div className="text-center max-w-2xl mx-auto space-y-3">
         <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
           {t('upload.title')}
         </h1>
         <p className="text-slate-600 text-sm sm:text-base">
           {t('home.description')}
         </p>
+
+        {/* Interactive Options Guide & Demo Trigger */}
+        <div className="pt-1 flex items-center justify-center">
+          <OptionsDemoGuide onSelectDocType={setDocType} onUseDemo={handleUseDemo} />
+        </div>
       </div>
 
       {/* Error Alert */}
@@ -629,9 +635,18 @@ export const Upload: React.FC = () => {
           <form onSubmit={handleUpload} className="space-y-6">
             {/* Document Type Selector */}
             <div>
-              <label className="block text-sm font-bold text-slate-800 mb-2.5">
-                {t('upload.doc_type')}
-              </label>
+              <div className="flex items-center justify-between mb-2.5">
+                <label className="block text-sm font-bold text-slate-800">
+                  {t('upload.doc_type')}
+                </label>
+                <span className="text-xs text-slate-500 font-medium">
+                  {docType === 'khatian'
+                    ? 'মালিকানা স্বত্ব ও খতিয়ান বিবরণ'
+                    : docType === 'porcha'
+                    ? 'দাগওয়ারি অংশীদার ও কর রসিদ'
+                    : 'সাব-রেজিস্ট্রি ক্রয়-বিক্রয় হস্তান্তর'}
+                </span>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {[
                   { type: 'khatian', label: t('upload.khatian'), desc: 'সি.এস, এস.এ, আর.এস ও বি.এস' },

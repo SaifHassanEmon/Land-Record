@@ -18,6 +18,7 @@ import { DocumentItem, DocumentStats } from '../types';
 import { getStats, listDocuments } from '../api/client';
 import { DocumentCard } from '../components/DocumentCard';
 import { LoadingSpinner } from '../components/LoadingSpinner';
+import { OptionsDemoGuide } from '../components/OptionsDemoGuide';
 
 export const Home: React.FC = () => {
   const { t, i18n } = useTranslation();
@@ -127,6 +128,8 @@ export const Home: React.FC = () => {
                 <Search className="w-5 h-5 text-emerald-300" />
                 <span>{t('home.search_btn')}</span>
               </Link>
+
+              <OptionsDemoGuide />
             </div>
           </div>
 
