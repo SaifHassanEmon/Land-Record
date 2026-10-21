@@ -15,6 +15,8 @@ import {
   Check,
   ExternalLink,
   Edit3,
+  Layers,
+  ArrowRight,
 } from 'lucide-react';
 import { DocType, DocumentItem } from '../types';
 import { uploadDocument, updateDocument, fetchDemoFile } from '../api/client';
@@ -225,16 +227,31 @@ export const Upload: React.FC = () => {
                 <CheckCircle2 className="w-8 h-8" />
               </div>
               <div className="space-y-1">
-                <h2 className="text-xl sm:text-2xl font-black text-emerald-950">
-                  {t('upload.process_done_title')}
-                </h2>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="text-xl sm:text-2xl font-black text-emerald-950">
+                    {t('upload.process_done_title')}
+                  </h2>
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-200 text-emerald-900">
+                    <Check className="w-3.5 h-3.5 text-emerald-700" />
+                    {t('upload.saved_in_database_note')}
+                  </span>
+                </div>
                 <p className="text-sm text-emerald-800">
                   {t('upload.process_done_subtitle')}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2 self-end sm:self-center">
+            <div className="flex items-center gap-3 self-end sm:self-center flex-wrap">
+              <button
+                type="button"
+                onClick={() => navigate('/documents')}
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-white border border-emerald-300 hover:border-emerald-500 text-emerald-800 text-xs sm:text-sm font-bold shadow-xs transition-all active:scale-95"
+              >
+                <Layers className="w-4 h-4 text-emerald-700" />
+                <span>{t('upload.view_in_documents')}</span>
+                <ArrowRight className="w-3.5 h-3.5 text-emerald-600" />
+              </button>
               <DocumentBadge type={processedDoc.doc_type} size="md" />
               {processedDoc.confidence && (
                 <DocumentBadge confidence={processedDoc.confidence} size="md" />
@@ -490,24 +507,35 @@ export const Upload: React.FC = () => {
                 <span>{t('upload.upload_another')}</span>
               </button>
 
-              <button
-                type="button"
-                onClick={handleVerifyAndSave}
-                disabled={isSavingVerified}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-sm sm:text-base shadow-md shadow-emerald-700/20 active:scale-95 transition-all disabled:bg-slate-300"
-              >
-                {isSavingVerified ? (
-                  <>
-                    <LoadingSpinner size="sm" message="" />
-                    <span>{t('upload.saving')}</span>
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-5 h-5" />
-                    <span>{t('upload.verify_and_save')}</span>
-                  </>
-                )}
-              </button>
+              <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => navigate('/documents')}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-sm transition-all shadow-xs"
+                >
+                  <Layers className="w-4 h-4 text-emerald-700" />
+                  <span>{t('upload.view_in_documents')}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleVerifyAndSave}
+                  disabled={isSavingVerified}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-sm sm:text-base shadow-md shadow-emerald-700/20 active:scale-95 transition-all disabled:bg-slate-300"
+                >
+                  {isSavingVerified ? (
+                    <>
+                      <LoadingSpinner size="sm" message="" />
+                      <span>{t('upload.saving')}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-5 h-5" />
+                      <span>{t('upload.verify_and_save')}</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>

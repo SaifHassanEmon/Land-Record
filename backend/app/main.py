@@ -21,7 +21,7 @@ logger = logging.getLogger("land_records")
 async def lifespan(app: FastAPI):
     """Lifecycle events: directory setup, database initialization."""
     logger.info("Initializing Bangladesh Land Records Digitization System...")
-    
+
     # 1. Ensure required folders exist
     settings.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     settings.DEMO_DOCS_DIR.mkdir(parents=True, exist_ok=True)
@@ -49,12 +49,23 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# CORS Configuration (allows Vite frontend at localhost:5173 and others)
-origins = settings.CORS_ORIGINS if isinstance(settings.CORS_ORIGINS, list) else [settings.CORS_ORIGINS]
+# CORS Configuration
+base_origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "https://land-record-delta.vercel.app",
+]
+if isinstance(settings.CORS_ORIGINS, list):
+    origins = list(set(base_origins + settings.CORS_ORIGINS))
+else:
+    origins = list(set(base_origins + [settings.CORS_ORIGINS]))
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=r"https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

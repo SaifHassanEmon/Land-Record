@@ -98,6 +98,29 @@ async def upload_document(
 
 
 @router.get(
+    "/stats",
+    summary="Get document statistics",
+    description="Returns total document counts grouped by doc_type.",
+)
+def get_document_stats(db: Session = Depends(get_db)):
+    total = db.query(Document).count()
+    khatian = db.query(Document).filter(Document.doc_type == "khatian").count()
+    porcha = db.query(Document).filter(Document.doc_type == "porcha").count()
+    deed = db.query(Document).filter(Document.doc_type == "deed").count()
+    return {
+        "total": total,
+        "khatian": khatian,
+        "porcha": porcha,
+        "deed": deed,
+    }
+
+
+@router.get(
+    "",
+    response_model=DocumentListResponse,
+    include_in_schema=False,
+)
+@router.get(
     "/",
     response_model=DocumentListResponse,
     summary="List all documents",

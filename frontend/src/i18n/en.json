@@ -54,9 +54,9 @@
     "demo_porcha_sub": "Dhaka, Dohar (Khatian No 567)",
     "or_use_demo": "Or use a sample demo document for testing:",
     "upload_and_process": "Upload & Process",
-    "process_done_title": "Process is Done!",
-    "process_done_subtitle": "Information extracted successfully. Please verify and edit before saving.",
-    "verify_and_save": "Verify & Save",
+    "process_done_title": "Processing & Saving Complete!",
+    "process_done_subtitle": "Document has been scanned and saved to the database. You can verify or edit fields below.",
+    "verify_and_save": "Save Verified & View Details",
     "verify_title": "Verify & Edit Information",
     "saving": "Saving...",
     "saved_success": "Saved successfully!",
@@ -71,7 +71,9 @@
     "field_plot": "Plot Numbers",
     "field_area": "Total Area",
     "field_land_type": "Land Type",
-    "field_date": "Date"
+    "field_date": "Date",
+    "view_in_documents": "View in Documents List",
+    "saved_in_database_note": "The document has been saved to the database successfully."
   },
   "documents": {
     "title": "All Documents",

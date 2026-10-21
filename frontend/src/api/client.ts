@@ -173,7 +173,10 @@ export async function uploadDocument(file: File, docType: DocType): Promise<Docu
         'Content-Type': 'multipart/form-data',
       },
     });
-    return mapBackendDocument(response.data);
+    const mapped = mapBackendDocument(response.data);
+    // Add to local documents cache immediately so it's guaranteed to appear in all lists
+    localDocuments = [mapped, ...localDocuments.filter((d) => d.id !== mapped.id)];
+    return mapped;
   } catch (err: any) {
     try {
       const response = await apiClient.post('/documents', formData, {
@@ -181,7 +184,9 @@ export async function uploadDocument(file: File, docType: DocType): Promise<Docu
           'Content-Type': 'multipart/form-data',
         },
       });
-      return mapBackendDocument(response.data);
+      const mapped = mapBackendDocument(response.data);
+      localDocuments = [mapped, ...localDocuments.filter((d) => d.id !== mapped.id)];
+      return mapped;
     } catch (fallbackErr) {
       console.warn('API upload failed, creating mock document representation:', fallbackErr);
 
@@ -242,6 +247,7 @@ export async function uploadDocument(file: File, docType: DocType): Promise<Docu
 
 /**
  * List documents with optional filters
+ * Always requests `/documents/` with trailing slash to avoid 307 redirect CORS issues
  */
 export async function listDocuments(params?: {
   doc_type?: string;
@@ -249,13 +255,17 @@ export async function listDocuments(params?: {
   limit?: number;
 }): Promise<DocumentItem[]> {
   try {
-    const response = await apiClient.get('/documents', { params });
+    const response = await apiClient.get('/documents/', { params });
     const data = response.data;
     if (Array.isArray(data)) {
-      return data.map(mapBackendDocument);
+      const items = data.map(mapBackendDocument);
+      localDocuments = items;
+      return items;
     }
     if (data && Array.isArray(data.items)) {
-      return data.items.map(mapBackendDocument);
+      const items = data.items.map(mapBackendDocument);
+      localDocuments = items;
+      return items;
     }
     return localDocuments;
   } catch (err) {
@@ -376,7 +386,6 @@ export async function getDemoDocs(): Promise<DemoDoc[]> {
       }));
     }
 
-    // If backend returns empty items list, fallback to rich built-in demo documents
     return MOCK_DEMO_DOCS;
   } catch (err) {
     console.warn('Falling back to mock demo docs:', err);

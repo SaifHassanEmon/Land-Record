@@ -10,12 +10,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Detect local bundled Tesseract if available
 LOCAL_TESSERACT = BASE_DIR / "tesseract" / "tesseract.exe"
 LOCAL_TESSDATA = BASE_DIR / "tesseract" / "tessdata"
+LOCAL_DB = (BASE_DIR / "land_records.db").resolve()
 
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Bangladesh Land Records Digitization System"
     API_V1_STR: str = "/api/v1"
-    DATABASE_URL: str = f"sqlite:///{BASE_DIR / 'land_records.db'}"
+    DATABASE_URL: str = f"sqlite:///{LOCAL_DB.as_posix()}"
 
     # Paths
     BASE_DIR: Path = BASE_DIR
@@ -39,6 +40,13 @@ class Settings(BaseSettings):
 
     # Cloud AI / Gemini OCR configuration
     GEMINI_API_KEY: str = ""
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def resolve_database_url(cls, v: str) -> str:
+        if not v or "sqlite:///./" in v or v == "sqlite:///land_records.db":
+            return f"sqlite:///{LOCAL_DB.as_posix()}"
+        return v
 
     @field_validator("TESSERACT_CMD", mode="after")
     @classmethod
