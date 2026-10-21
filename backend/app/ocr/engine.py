@@ -1,4 +1,5 @@
 import logging
+import os
 import threading
 from typing import Any, Dict, List, Optional
 import numpy as np
@@ -10,40 +11,51 @@ logger = logging.getLogger(__name__)
 # Global EasyOCR reader cache and lock
 _reader_lock = threading.Lock()
 _easyocr_reader = None
+_easyocr_available = None
+
+
+def check_easyocr_available() -> bool:
+    """Checks once if EasyOCR is installed and importable."""
+    global _easyocr_available
+    if _easyocr_available is None:
+        try:
+            import easyocr
+            _easyocr_available = True
+        except ImportError:
+            _easyocr_available = False
+            logger.info("EasyOCR not installed. Pytesseract will be primary local OCR.")
+    return _easyocr_available
 
 
 def get_easyocr_reader():
-    """Thread-safe singleton accessor for EasyOCR Reader."""
+    """Thread-safe accessor for EasyOCR Reader if installed."""
     global _easyocr_reader
+    if not check_easyocr_available():
+        return None
+
     if _easyocr_reader is None:
         with _reader_lock:
             if _easyocr_reader is None:
                 try:
                     import easyocr
                     langs = list(settings.DEFAULT_OCR_LANGUAGES)
-                    logger.info(f"Initializing EasyOCR Reader for languages: {langs} (CPU mode)...")
+                    logger.info(f"Initializing EasyOCR for: {langs} (CPU)...")
                     _easyocr_reader = easyocr.Reader(langs, gpu=False)
                     logger.info("EasyOCR Reader successfully initialized.")
                 except Exception as e:
-                    logger.error(f"Failed to initialize EasyOCR reader: {e}")
+                    logger.warning(f"EasyOCR initialization failed: {e}")
                     _easyocr_reader = None
     return _easyocr_reader
 
 
 def run_easyocr_on_image(image_arr: np.ndarray) -> Optional[Dict[str, Any]]:
-    """
-    Runs EasyOCR on a preprocessed image (numpy array).
-    Returns dict with text, confidence, and words list, or None if failed.
-    """
+    """Runs EasyOCR on an image if available."""
     reader = get_easyocr_reader()
     if reader is None:
         return None
 
     try:
-        # EasyOCR readtext returns list of (bbox, text, prob)
-        # bbox is [[x1, y1], [x2, y2], [x3, y3], [x4, y4]]
         results = reader.readtext(image_arr, detail=1, paragraph=False)
-        
         extracted_lines = []
         words = []
         confidences = []
@@ -52,7 +64,7 @@ def run_easyocr_on_image(image_arr: np.ndarray) -> Optional[Dict[str, Any]]:
             clean_text = str(text).strip()
             if not clean_text:
                 continue
-            
+
             box_coords = [[int(pt[0]), int(pt[1])] for pt in bbox]
             confidence_val = round(float(prob), 4)
 
@@ -74,25 +86,29 @@ def run_easyocr_on_image(image_arr: np.ndarray) -> Optional[Dict[str, Any]]:
             "engine": "easyocr",
         }
     except Exception as e:
-        logger.warning(f"EasyOCR extraction error: {e}. Falling back to pytesseract.")
+        logger.warning(f"EasyOCR extraction error: {e}")
         return None
 
 
 def run_pytesseract_on_image(image_arr: np.ndarray) -> Dict[str, Any]:
     """
-    Fallback OCR using pytesseract.
-    Supports Bengali ('ben') and English ('eng').
+    Robust OCR using pytesseract with Bengali ('ben') and English ('eng').
+    Uses settings.TESSERACT_CMD and settings.TESSDATA_PREFIX.
     """
     import pytesseract
 
     if settings.TESSERACT_CMD:
         pytesseract.pytesseract.tesseract_cmd = settings.TESSERACT_CMD
 
-    # Try ben+eng first, then fallback to eng if ben is not installed
+    if settings.TESSDATA_PREFIX:
+        os.environ["TESSDATA_PREFIX"] = settings.TESSDATA_PREFIX
+
+    # Languages to try in order
     lang_options = ["ben+eng", "ben", "eng"]
     data = None
     used_lang = "eng"
 
+    # 1. First get detailed bounding boxes and confidence scores
     for lang in lang_options:
         try:
             data = pytesseract.image_to_data(
@@ -103,20 +119,27 @@ def run_pytesseract_on_image(image_arr: np.ndarray) -> Dict[str, Any]:
             used_lang = lang
             break
         except Exception as e:
-            logger.warning(f"pytesseract failed with lang '{lang}': {e}")
+            logger.debug(f"pytesseract image_to_data failed for lang '{lang}': {e}")
             continue
+
+    # 2. Get high-quality full text with image_to_string using the detected language
+    full_text = ""
+    try:
+        full_text = pytesseract.image_to_string(image_arr, lang=used_lang).strip()
+    except Exception as e:
+        logger.warning(f"pytesseract image_to_string error: {e}")
 
     if data is None:
         logger.error("All pytesseract language options failed.")
         return {
-            "text": "",
+            "text": full_text,
             "confidence": 0.0,
             "words": [],
             "engine": "pytesseract_failed",
         }
 
     words = []
-    lines_map = {}  # group by line number
+    lines_map = {}
     confidences = []
 
     num_boxes = len(data.get("text", []))
@@ -145,23 +168,24 @@ def run_pytesseract_on_image(image_arr: np.ndarray) -> Dict[str, Any]:
                 lines_map[line_idx] = []
             lines_map[line_idx].append(word_text)
 
-    # Reconstruct text by lines
-    full_text = "\n".join(" ".join(line_words) for line_words in lines_map.values())
-    avg_confidence = float(np.mean(confidences)) if confidences else 0.0
+    # If image_to_string produced text, prefer it; otherwise use reconstructed line text
+    if not full_text and lines_map:
+        full_text = "\n".join(" ".join(line_words) for line_words in lines_map.values())
+
+    avg_confidence = float(np.mean(confidences)) if confidences else (0.75 if full_text else 0.0)
 
     return {
         "text": full_text,
         "confidence": round(avg_confidence, 4),
         "words": words,
-        "engine": f"pytesseract ({used_lang})",
+        "engine": f"tesseract ({used_lang})",
     }
 
 
 def perform_ocr_on_images(images: List[np.ndarray]) -> Dict[str, Any]:
     """
     Performs OCR across a list of preprocessed page images.
-    Uses EasyOCR as primary and pytesseract as fallback.
-    Returns: {text: str, confidence: float, words: list, engine: str}
+    Uses Tesseract (with Bengali) as primary local engine, or EasyOCR if installed.
     """
     if not images:
         return {"text": "", "confidence": 0.0, "words": [], "engine": "none"}
@@ -173,23 +197,24 @@ def perform_ocr_on_images(images: List[np.ndarray]) -> Dict[str, Any]:
 
     for idx, img in enumerate(images):
         logger.info(f"Processing OCR for page {idx + 1}/{len(images)}...")
-        
-        # Primary: EasyOCR
-        res = run_easyocr_on_image(img)
 
-        # Fallback: pytesseract
+        # If EasyOCR is available, try it
+        res = None
+        if check_easyocr_available():
+            res = run_easyocr_on_image(img)
+
+        # Fallback / primary: pytesseract
         if res is None:
-            logger.info("EasyOCR unavailable or failed. Using pytesseract fallback.")
             res = run_pytesseract_on_image(img)
 
         page_text = res.get("text", "").strip()
         if page_text:
             all_page_texts.append(page_text)
-        
+
         all_words.extend(res.get("words", []))
         if res.get("confidence", 0) > 0:
             page_confidences.append(res["confidence"])
-        
+
         engines_used.add(res.get("engine", "unknown"))
 
     consolidated_text = "\n\n--- Page Break ---\n\n".join(all_page_texts) if len(all_page_texts) > 1 else (all_page_texts[0] if all_page_texts else "")

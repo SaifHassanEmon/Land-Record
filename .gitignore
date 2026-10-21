@@ -58,3 +58,5 @@ Thumbs.db
 backend/uploads/*
 !backend/uploads/.gitkeep
 
+
+backend/tesseract/

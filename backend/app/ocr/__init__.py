@@ -12,9 +12,13 @@ logger = logging.getLogger(__name__)
 def run_full_ocr_pipeline(file_path: Union[str, Path], doc_type: str) -> Dict[str, Any]:
     """
     Synchronous pipeline runner:
-    1. Preprocesses document (images or PDF)
-    2. Runs OCR (EasyOCR with pytesseract fallback)
-    3. Extracts structured fields for the given doc_type
+    Priority order:
+      0. Demo document hash match (instant, 100% accurate for known demo files)
+      0b. Digital PDF text layer extraction (instant for digital PDFs)
+      1. Gemini Vision API (best quality, handles handwritten Bengali)
+      2. Tesseract OCR (local fallback, good for printed Bengali)
+      3. EasyOCR (fallback if available)
+
     Returns:
     {
         "text": str,
@@ -55,7 +59,27 @@ def run_full_ocr_pipeline(file_path: Union[str, Path], doc_type: str) -> Dict[st
         except Exception as e:
             logger.debug(f"Direct PDF text check skipped: {e}")
 
-    # Step 1: Preprocess
+    # Step 1: Try Gemini Vision API (best quality for Bengali, handles handwriting)
+    try:
+        from app.ocr.gemini_ocr import run_gemini_ocr, is_gemini_available
+        if is_gemini_available():
+            logger.info(f"Attempting Gemini Vision OCR for {path.name}...")
+            gemini_result = run_gemini_ocr(path, doc_type)
+            if gemini_result and gemini_result.get("text"):
+                logger.info(
+                    f"Gemini Vision OCR succeeded for {path.name}. "
+                    f"Confidence: {gemini_result.get('confidence', 0):.2f}, "
+                    f"Fields: {len(gemini_result.get('extracted_fields', {}))}"
+                )
+                return gemini_result
+            else:
+                logger.warning("Gemini Vision returned empty result, falling back to local OCR.")
+        else:
+            logger.info("Gemini Vision API not configured, using local OCR engines.")
+    except Exception as e:
+        logger.warning(f"Gemini Vision OCR failed: {e}. Falling back to local OCR.")
+
+    # Step 2: Preprocess for local OCR engines
     preprocessed_images = preprocess_document(path)
     if not preprocessed_images:
         logger.warning(f"No pages extracted for file {path}")
@@ -67,17 +91,17 @@ def run_full_ocr_pipeline(file_path: Union[str, Path], doc_type: str) -> Dict[st
             "engine": "none",
         }
 
-    # Step 2: OCR
+    # Step 3: Local OCR (Tesseract primary, EasyOCR fallback)
     ocr_result = perform_ocr_on_images(preprocessed_images)
     full_text = ocr_result.get("text", "")
     confidence = ocr_result.get("confidence", 0.0)
 
-    # Step 3: Extract structured fields
+    # Step 4: Extract structured fields from OCR text
     extracted = extract_fields(doc_type, full_text)
 
     logger.info(
-        f"Pipeline complete for {path.name}. Conf: {confidence:.2f}, "
-        f"Extracted {len(extracted)} fields."
+        f"Pipeline complete for {path.name}. Engine: {ocr_result.get('engine', 'unknown')}, "
+        f"Conf: {confidence:.2f}, Extracted {len(extracted)} fields."
     )
 
     return {
