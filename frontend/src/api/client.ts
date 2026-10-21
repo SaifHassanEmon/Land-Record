@@ -7,9 +7,6 @@ const API_BASE = RAW_API_BASE.replace(/\/+$/, '');
 
 export const apiClient = axios.create({
   baseURL: API_BASE,
-  headers: {
-    'Content-Type': 'application/json',
-  },
   timeout: 120000,
 });
 
@@ -167,38 +164,41 @@ export async function uploadDocument(file: File, docType: DocType): Promise<Docu
   formData.append('file', file);
   formData.append('doc_type', docType);
 
-  try {
-    // When sending FormData, Content-Type must remain undefined so the browser/axios
-    // automatically appends 'multipart/form-data; boundary=----WebKitFormBoundary...'
-    const response = await apiClient.post('/documents/upload', formData, {
-      headers: {
-        'Content-Type': undefined,
-      },
-    });
-    const mapped = mapBackendDocument(response.data);
-    // Add to local documents cache immediately so it's guaranteed to appear in all lists
-    localDocuments = [mapped, ...localDocuments.filter((d) => d.id !== mapped.id)];
-    return mapped;
-  } catch (err: any) {
+  // Try endpoints in order:
+  // 1. Through Vite proxy: /api/v1/documents/upload
+  // 2. Direct backend fallback: http://127.0.0.1:8000/api/v1/documents/upload
+  const endpoints = [
+    `${API_BASE}/documents/upload`,
+    'http://127.0.0.1:8000/api/v1/documents/upload',
+  ];
+
+  let lastError: any = null;
+
+  for (const url of endpoints) {
     try {
-      const response = await apiClient.post('/documents', formData, {
-        headers: {
-          'Content-Type': undefined,
-        },
+      // Use native browser fetch for 100% reliable multipart/form-data boundary generation
+      const response = await fetch(url, {
+        method: 'POST',
+        body: formData,
       });
-      const mapped = mapBackendDocument(response.data);
-      localDocuments = [mapped, ...localDocuments.filter((d) => d.id !== mapped.id)];
-      return mapped;
-    } catch (fallbackErr: any) {
-      console.error('Document upload failed:', fallbackErr);
-      const message =
-        fallbackErr?.response?.data?.detail ||
-        err?.response?.data?.detail ||
-        fallbackErr?.message ||
-        'দলিল আপলোড বা OCR প্রক্রিয়াকরণ সম্পন্ন হতে পারেনি। সার্ভার সংযোগ পরীক্ষা করুন।';
-      throw new Error(message);
+
+      if (response.ok) {
+        const data = await response.json();
+        const mapped = mapBackendDocument(data);
+        localDocuments = [mapped, ...localDocuments.filter((d) => d.id !== mapped.id)];
+        return mapped;
+      } else {
+        const errorJson = await response.json().catch(() => ({}));
+        lastError = new Error(errorJson.detail || `সার্ভার ত্রুটি: ${response.status}`);
+      }
+    } catch (netErr: any) {
+      lastError = netErr;
+      console.warn(`Upload attempt failed on ${url}:`, netErr);
     }
   }
+
+  console.error('All upload attempts failed:', lastError);
+  throw lastError || new Error('দলিল আপলোড বা OCR সম্পন্ন হতে পারেনি। সার্ভার চালু আছে কিনা পরীক্ষা করুন।');
 }
 
 /**
